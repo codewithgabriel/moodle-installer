@@ -15,7 +15,11 @@ source "$LIB_DIR/utils.sh"
 source "$LIB_DIR/checks.sh"
 
 # ── Logging ──────────────────────────────────────────────────
-exec > >(tee -a "$LOG_FILE") 2>&1
+# Simple logging - create log file but don't redirect everything
+touch "$LOG_FILE"
+log_msg() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG_FILE"
+}
 
 # ── Banner ───────────────────────────────────────────────────
 print_banner() {

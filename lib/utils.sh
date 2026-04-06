@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # lib/utils.sh — shared helper functions
 
-info()    { echo -e "\n${CYAN}  ℹ  $*${RESET}" >&2; }
-success() { echo -e "\n${BOLD_GREEN}  ✔  $*${RESET}" >&2; }
-warn()    { echo -e "\n${BOLD_YELLOW}  ⚠  $*${RESET}" >&2; }
-error()   { echo -e "\n${BOLD_RED}  ✖  $*${RESET}" >&2; }
+info()    { echo -e "\n${CYAN}  ℹ  $*${RESET}" >&2; [[ -f "$LOG_FILE" ]] && echo "$(date '+%Y-%m-%d %H:%M:%S') INFO: $*" >> "$LOG_FILE"; }
+success() { echo -e "\n${BOLD_GREEN}  ✔  $*${RESET}" >&2; [[ -f "$LOG_FILE" ]] && echo "$(date '+%Y-%m-%d %H:%M:%S') SUCCESS: $*" >> "$LOG_FILE"; }
+warn()    { echo -e "\n${BOLD_YELLOW}  ⚠  $*${RESET}" >&2; [[ -f "$LOG_FILE" ]] && echo "$(date '+%Y-%m-%d %H:%M:%S') WARN: $*" >> "$LOG_FILE"; }
+error()   { echo -e "\n${BOLD_RED}  ✖  $*${RESET}" >&2; [[ -f "$LOG_FILE" ]] && echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: $*" >> "$LOG_FILE"; }
 step()    { echo -e "\n${BOLD}  ──  $*${RESET}"; }
 divider() { echo -e "\n${DIM}  ────────────────────────────────────────${RESET}"; }
 
