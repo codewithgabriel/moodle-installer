@@ -1,0 +1,43 @@
+[H[2J[3J[0;36m
+  ╔╦╗╔═╗╔═╗╔╦╗╦  ╔═╗  ╔╦╗╔═╗╔═╗╦  ╔═╗╦ ╦
+  ║║║║ ║║ ║ ║║║  ║╣    ║║║╣ ╠═╝║  ║ ║╚╦╝
+  ╩ ╩╚═╝╚═╝═╩╝╩═╝╚═╝  ═╩╝╚═╝╩  ╩═╝╚═╝ ╩
+       Moodle 4.5 — Automated Installer & CI/CD
+[0m
+[2m  Logs → /home/gabriel/Documents/moodle-installer/moodle-install.log[0m
+
+[1m  Choose your installation scenario:[0m
+
+  [0;32m[A][0m Fresh Linux server  [2m(brand new VPS / bare metal)[0m
+  [0;33m[B][0m Existing Linux server  [2m(Apache/Nginx already installed)[0m
+  [0;35m[C][0m cPanel / Shared hosting  [2m(no root, web-based panel)[0m
+  [0;36m[D][0m CI/CD setup only  [2m(GitHub Actions + deploy pipeline)[0m
+  [0;31m[Q][0m Quit
+
+  Your choice [A/B/C/D/Q]: 
+[1;31m  ✖  This script must be run as root or with sudo.[0m
+[H[2J[3J[0;36m
+  ╔╦╗╔═╗╔═╗╔╦╗╦  ╔═╗  ╔╦╗╔═╗╔═╗╦  ╔═╗╦ ╦
+  ║║║║ ║║ ║ ║║║  ║╣    ║║║╣ ╠═╝║  ║ ║╚╦╝
+  ╩ ╩╚═╝╚═╝═╩╝╩═╝╚═╝  ═╩╝╚═╝╩  ╩═╝╚═╝ ╩
+       Moodle 4.5 — Automated Installer & CI/CD
+[0m
+[2m  Logs → /home/gabriel/Documents/moodle-installer/moodle-install.log[0m
+
+[1m  Choose your installation scenario:[0m
+
+  [0;32m[A][0m Fresh Linux server  [2m(brand new VPS / bare metal)[0m
+  [0;33m[B][0m Existing Linux server  [2m(Apache/Nginx already installed)[0m
+  [0;35m[C][0m cPanel / Shared hosting  [2m(no root, web-based panel)[0m
+  [0;36m[D][0m CI/CD setup only  [2m(GitHub Actions + deploy pipeline)[0m
+  [0;31m[Q][0m Quit
+
+  Your choice [A/B/C/D/Q]: 
+[2m  ────────────────────────────────────────[0m
+  [1;36mPre-flight Checks[0m
+
+[2m  ────────────────────────────────────────[0m
+
+[1;32m  ✔  OS detected: Ubuntu 24.04.4 LTS[0m
+
+[1;31m  ✖  Insufficient disk space. Need 2048MB, have 942MB.[0m

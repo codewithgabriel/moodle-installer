@@ -33,8 +33,8 @@ run_cpanel_guide() {
   write_section "Step 2 — Enter Your Configuration"
 
   prompt SITE_DOMAIN  "Your domain (e.g. learn.yoursite.com)" "learn.yoursite.com"
-  prompt MOODLE_DIR   "Path to Moodle in public_html (e.g. /home/user/public_html/moodle)" "/home/cpanelusername/public_html/moodle"
-  prompt MOODLE_DATA  "Moodle data dir OUTSIDE public_html" "/home/cpanelusername/moodledata"
+  prompt MOODLE_DIR   "Path to Moodle in public_html (e.g. /home/user/public_html/moodle)"
+  prompt MOODLE_DATA  "Moodle data dir OUTSIDE public_html (e.g. /home/user/moodledata)"
   prompt DB_HOST      "Database host (check cPanel MySQL — often 'localhost')" "localhost"
   prompt DB_NAME      "Database name (as created in cPanel)" "cpanelusername_kbm"
   prompt DB_USER      "Database username (as created in cPanel)" "cpanelusername_moodleuser"

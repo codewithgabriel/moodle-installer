@@ -21,8 +21,20 @@ prompt() {
   local default="${3:-}"
   local hint=""
   [[ -n "$default" ]] && hint=" ${DIM}[${default}]${RESET}"
-  read -rp "$(echo -e "  ${BOLD_CYAN}→  $msg$hint: ${RESET}")" val
-  val="${val:-$default}"
+  
+  while true; do
+    read -rp "$(echo -e "  ${BOLD_CYAN}→  $msg$hint: ${RESET}")" val
+    val="${val:-$default}"
+    
+    # If no default and value is empty, require input
+    if [[ -z "$default" && -z "$val" ]]; then
+      warn "This field is required. Please enter a value."
+      continue
+    fi
+    
+    break
+  done
+  
   printf -v "$varname" '%s' "$val"
 }
 

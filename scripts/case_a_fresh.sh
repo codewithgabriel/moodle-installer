@@ -13,8 +13,8 @@ run_fresh_install() {
   write_section "Configuration"
 
   prompt SITE_DOMAIN   "Your Moodle domain or IP" "localhost"
-  prompt MOODLE_DIR    "Moodle installation directory" "/var/www/html/moodle"
-  prompt MOODLE_DATA   "Moodle data directory (outside webroot)" "/var/moodledata"
+  prompt MOODLE_DIR    "Moodle installation directory (e.g. /var/www/html/moodle)"
+  prompt MOODLE_DATA   "Moodle data directory (outside webroot, e.g. /var/moodledata)"
   prompt DB_NAME       "Database name" "kbm_moodle"
   prompt DB_USER       "Database username" "moodleuser"
   prompt_secret DB_PASS "Database password (leave blank to auto-generate)"
