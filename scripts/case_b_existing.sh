@@ -14,17 +14,21 @@ run_existing_install() {
 
   # Detect PHP
   local PHP_OK=false
-  check_php_version && PHP_OK=true
+  if check_php_version; then
+    PHP_OK=true
+  fi
 
   # Detect MariaDB
   local DB_OK=false
-  check_mariadb && DB_OK=true
+  if check_mariadb; then
+    DB_OK=true
+  fi
 
   divider
   echo -e "  ${BOLD}Environment summary:${RESET}"
   echo -e "  Web server : ${CYAN}${WEB_SERVER}${RESET}"
   if [[ "$PHP_OK" == "true" ]]; then
-    echo -e "  PHP 8.1+   : ${BOLD_GREEN}Yes${RESET}"
+    echo -e "  PHP 8.1+   : ${BOLD_GREEN}Yes (${PHP_VER})${RESET}"
   else
     echo -e "  PHP 8.1+   : ${BOLD_YELLOW}Needs install/upgrade${RESET}"
   fi
@@ -42,8 +46,8 @@ run_existing_install() {
 
   prompt SITE_DOMAIN "Your Moodle domain or IP" "localhost"
   prompt MOODLE_DIR  "Moodle installation directory (e.g. /var/www/html/moodle)"
-  prompt MOODLE_DATA "Moodle data directory (outside webroot, e.g. /var/moodledata)"
-  prompt DB_NAME     "Database name" "kbm_moodle"
+  prompt MOODLE_DATA "Moodle data directory — OUTSIDE webroot (e.g. /var/moodledata)"
+  prompt DB_NAME     "Database name" "moodle"
   prompt DB_USER     "Database username" "moodleuser"
   prompt_secret DB_PASS "Database password (leave blank to auto-generate)"
   if [[ -z "$DB_PASS" ]]; then
@@ -62,16 +66,32 @@ run_existing_install() {
   prompt SITE_NAME   "Site full name" "My Moodle LMS"
   prompt SITE_SHORT  "Site short name" "LMS"
 
+  # ── Version selection ─────────────────────────────────────
+  local MOODLE_BRANCH
+  pick_moodle_version MOODLE_BRANCH
+
   # ── PHP: install/upgrade if needed ────────────────────────
   if [[ "$PHP_OK" == "false" ]]; then
     write_section "Installing PHP 8.3"
-    run_cmd "Adding PHP repository" add-apt-repository -y ppa:ondrej/php
+    run_cmd "Installing software-properties-common" apt_install software-properties-common
+    run_cmd "Adding ondrej/php PPA" add-apt-repository -y ppa:ondrej/php
     run_cmd "Updating package lists" apt-get update
-    run_cmd "Installing PHP 8.3 + extensions" apt_install \
-      php8.3 php8.3-cli php8.3-mysql php8.3-xml \
-      php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
-      php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
-      php8.3-exif php8.3-fileinfo libapache2-mod-php8.3
+
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+      run_cmd "Installing PHP 8.3 + fpm" apt_install \
+        php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
+        php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
+        php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
+        php8.3-exif php8.3-fileinfo
+    else
+      run_cmd "Installing PHP 8.3 + apache module" apt_install \
+        php8.3 php8.3-cli php8.3-mysql php8.3-xml \
+        php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
+        php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
+        php8.3-exif php8.3-fileinfo libapache2-mod-php8.3
+    fi
+    PHP_BIN="php8.3"
+    PHP_MAJOR_MINOR="8.3"
     success "PHP 8.3 installed"
   fi
 
@@ -79,41 +99,48 @@ run_existing_install() {
   write_section "Configuring PHP"
   local php_ini
   if [[ "$WEB_SERVER" == "nginx" ]]; then
-    php_ini="/etc/php/8.3/fpm/php.ini"
-    run_cmd "Installing php8.3-fpm" apt_install php8.3-fpm
+    php_ini="/etc/php/${PHP_MAJOR_MINOR}/fpm/php.ini"
+    # Ensure fpm is installed
+    if ! check_cmd "php${PHP_MAJOR_MINOR}-fpm" && ! check_cmd php-fpm; then
+      run_cmd "Installing php-fpm" apt_install "php${PHP_MAJOR_MINOR}-fpm"
+    fi
+    svc_enable "php${PHP_MAJOR_MINOR}-fpm"
+    svc_start  "php${PHP_MAJOR_MINOR}-fpm"
   else
-    php_ini="/etc/php/8.3/apache2/php.ini"
+    php_ini="/etc/php/${PHP_MAJOR_MINOR}/apache2/php.ini"
   fi
 
-  [[ -f "$php_ini" ]] && {
-    sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/' "$php_ini"
+  if [[ -f "$php_ini" ]]; then
+    sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/'           "$php_ini"
     sed -i 's/^;\?upload_max_filesize\s*=.*/upload_max_filesize = 512M/' "$php_ini"
-    sed -i 's/^;\?post_max_size\s*=.*/post_max_size = 512M/' "$php_ini"
-    sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/' "$php_ini"
-    sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/' "$php_ini"
+    sed -i 's/^;\?post_max_size\s*=.*/post_max_size = 512M/'             "$php_ini"
+    sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/'               "$php_ini"
+    sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/'     "$php_ini"
     success "PHP configured: $php_ini"
-  }
+  else
+    warn "PHP ini not found at $php_ini — skipping PHP config"
+  fi
 
   # ── MariaDB: install if needed ────────────────────────────
   if [[ "$DB_OK" == "false" ]]; then
     write_section "Installing MariaDB"
     run_cmd "Installing MariaDB" apt_install mariadb-server mariadb-client
-    systemctl enable mariadb
-    systemctl start mariadb
+    svc_enable mariadb
+    svc_start  mariadb
     success "MariaDB installed"
   fi
 
   # ── Database setup ────────────────────────────────────────
   write_section "Database Setup"
 
-  # Check if DB already exists
-  if mysql -u root -e "USE \`${DB_NAME}\`;" &>/dev/null; then
+  if mysql_root -e "USE \`${DB_NAME}\`;" &>/dev/null; then
     warn "Database '${DB_NAME}' already exists."
-    confirm "Drop and recreate it? (THIS DELETES ALL DATA)" && \
-      mysql -u root -e "DROP DATABASE \`${DB_NAME}\`;"
+    if confirm "Drop and recreate it? (THIS DELETES ALL DATA)"; then
+      mysql_root -e "DROP DATABASE \`${DB_NAME}\`;"
+    fi
   fi
 
-  mysql -u root <<MYSQL
+  mysql_root <<MYSQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
@@ -125,28 +152,18 @@ MYSQL
   if ! check_cmd redis-cli; then
     write_section "Installing Redis"
     run_cmd "Installing Redis" apt_install redis-server
-    systemctl enable redis-server
-    systemctl start redis-server
+    svc_enable redis-server
+    svc_start  redis-server
     success "Redis installed"
   else
     success "Redis already present"
   fi
 
   # ── Download Moodle ───────────────────────────────────────
-  write_section "Downloading Moodle 4.5"
-
-  if [[ -d "$MOODLE_DIR" ]]; then
-    warn "Directory $MOODLE_DIR already exists."
-    confirm "Remove existing Moodle files?" && rm -rf "$MOODLE_DIR"
-  fi
-
-  mkdir -p "$MOODLE_DIR" "$MOODLE_DATA"
-  git clone --depth=1 --branch MOODLE_405_STABLE \
-    https://github.com/moodle/moodle.git "$MOODLE_DIR" &>/dev/null &
-  local clone_pid=$!
-  spinner $clone_pid "Cloning Moodle 4.5..."
-  wait $clone_pid || { error "git clone failed. Check your internet connection and try again."; exit 1; }
-  success "Moodle downloaded"
+  local MOODLE_INSTALL_MODE
+  handle_moodle_dir "$MOODLE_DIR" "$MOODLE_BRANCH" || return
+  mkdir -p "$MOODLE_DATA"
+  fetch_moodle "$MOODLE_DIR" "$MOODLE_BRANCH" "$MOODLE_INSTALL_MODE"
 
   # ── Permissions ───────────────────────────────────────────
   chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
@@ -155,64 +172,93 @@ MYSQL
 
   # ── Web server config ─────────────────────────────────────
   write_section "Web Server Configuration"
-
   local WWWROOT="http://${SITE_DOMAIN}"
 
   if [[ "$WEB_SERVER" == "nginx" ]]; then
+    local fpm_sock="/var/run/php/php${PHP_MAJOR_MINOR}-fpm.sock"
     cat > "/etc/nginx/sites-available/moodle" <<NGINX
 server {
     listen 80;
     server_name ${SITE_DOMAIN};
     root ${MOODLE_DIR};
-    index index.php;
+    index index.php index.html;
+
+    client_max_body_size 512M;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$query_string;
     }
 
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
+    location ~ [^/]\.php(/|\$) {
+        fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
+        fastcgi_pass unix:${fpm_sock};
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_param PATH_INFO \$fastcgi_path_info;
         include fastcgi_params;
+        fastcgi_read_timeout 300;
     }
 
-    location ~ /\.ht { deny all; }
+    # Block access to sensitive files
+    location ~ /\.ht          { deny all; }
+    location ~ /\.git          { deny all; }
+    location /dataroot/        { deny all; }
 }
 NGINX
-    ln -sf /etc/nginx/sites-available/moodle /etc/nginx/sites-enabled/
-    nginx -t && systemctl reload nginx
-    success "Nginx configured"
+    ln -sf /etc/nginx/sites-available/moodle /etc/nginx/sites-enabled/moodle
+    # Remove default if it conflicts
+    rm -f /etc/nginx/sites-enabled/default
+    if nginx -t &>/dev/null; then
+      svc_reload nginx
+      success "Nginx configured"
+    else
+      error "Nginx config test failed. Check /etc/nginx/sites-available/moodle"
+      nginx -t
+      exit 1
+    fi
   else
     cat > "/etc/apache2/sites-available/moodle.conf" <<VHOST
 <VirtualHost *:80>
     ServerName ${SITE_DOMAIN}
     DocumentRoot ${MOODLE_DIR}
+
     <Directory ${MOODLE_DIR}>
         Options -Indexes +FollowSymLinks
         AllowOverride All
         Require all granted
     </Directory>
+
     ErrorLog \${APACHE_LOG_DIR}/moodle_error.log
     CustomLog \${APACHE_LOG_DIR}/moodle_access.log combined
 </VirtualHost>
 VHOST
     a2ensite moodle.conf &>/dev/null
+    a2dissite 000-default.conf &>/dev/null || true
     a2enmod rewrite &>/dev/null
-    systemctl restart apache2
+    svc_restart apache2
     success "Apache configured"
   fi
 
   # ── config.php ────────────────────────────────────────────
   write_section "Generating config.php"
-  cat > "$MOODLE_DIR/config.php" <<CONFIG
+
+  if [[ "$MOODLE_INSTALL_MODE" != "upgrade" ]]; then
+    # Detect DB type — prefer mariadb driver, fall back to mysqli
+    local DB_TYPE="mariadb"
+    if mysql_root -e "SELECT VERSION();" 2>/dev/null | grep -qi "mariadb"; then
+      DB_TYPE="mariadb"
+    else
+      DB_TYPE="mysqli"
+    fi
+
+    cat > "$MOODLE_DIR/config.php" <<CONFIG
 <?php  // Moodle configuration file
 
 unset(\$CFG);
 global \$CFG;
 \$CFG = new stdClass();
 
-\$CFG->dbtype    = 'mariadb';
+\$CFG->dbtype    = '${DB_TYPE}';
 \$CFG->dblibrary = 'native';
 \$CFG->dbhost    = 'localhost';
 \$CFG->dbname    = '${DB_NAME}';
@@ -234,31 +280,45 @@ global \$CFG;
 \$CFG->session_handler_class = '\core\session\redis';
 \$CFG->session_redis_host = '127.0.0.1';
 \$CFG->session_redis_port = 6379;
+\$CFG->session_redis_database = 0;
+\$CFG->session_redis_acquire_lock_timeout = 120;
+\$CFG->session_redis_lock_expire = 7200;
 
 require_once(__DIR__ . '/lib/setup.php');
 CONFIG
-  chown www-data:www-data "$MOODLE_DIR/config.php"
-  chmod 640 "$MOODLE_DIR/config.php"
-  success "config.php written"
+    chown www-data:www-data "$MOODLE_DIR/config.php"
+    chmod 640 "$MOODLE_DIR/config.php"
+    success "config.php written"
+  else
+    info "Upgrade mode — existing config.php preserved"
+  fi
 
-  # ── CLI install ───────────────────────────────────────────
-  write_section "Running Moodle CLI Install"
-  sudo -u www-data php "$MOODLE_DIR/admin/cli/install_database.php" \
-    --agree-license \
-    --fullname="$SITE_NAME" \
-    --shortname="$SITE_SHORT" \
-    --adminuser="$ADMIN_USER" \
-    --adminpass="$ADMIN_PASS" \
-    --adminemail="$ADMIN_EMAIL" &
-  local install_pid=$!
-  spinner $install_pid "Installing Moodle database..."
-  wait $install_pid || { error "Moodle CLI install failed. Check the log for details."; exit 1; }
-  success "Database installed"
+  # ── CLI install or upgrade ────────────────────────────────
+  write_section "Running Moodle Install / Upgrade"
+  if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
+    local upgrade_pid=$!
+    spinner $upgrade_pid "Upgrading Moodle database..."
+    wait $upgrade_pid || { error "Moodle upgrade failed. Check the log for details."; exit 1; }
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/purge_caches.php" &>/dev/null
+    success "Moodle upgraded to $MOODLE_BRANCH"
+  else
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/install_database.php" \
+      --agree-license \
+      --fullname="$SITE_NAME" \
+      --shortname="$SITE_SHORT" \
+      --adminuser="$ADMIN_USER" \
+      --adminpass="$ADMIN_PASS" \
+      --adminemail="$ADMIN_EMAIL" &
+    local install_pid=$!
+    spinner $install_pid "Installing Moodle database..."
+    wait $install_pid || { error "Moodle CLI install failed. Check the log for details."; exit 1; }
+    success "Database installed"
+  fi
 
   # ── Cron ──────────────────────────────────────────────────
-  (crontab -u www-data -l 2>/dev/null; \
-    echo "*/1 * * * * /usr/bin/php ${MOODLE_DIR}/admin/cli/cron.php >/dev/null 2>&1") \
-    | crontab -u www-data -
+  local cron_entry="*/1 * * * * /usr/bin/${PHP_BIN} ${MOODLE_DIR}/admin/cli/cron.php >/dev/null 2>&1"
+  add_cron_job "www-data" "$cron_entry"
   success "Cron configured"
 
   # ── Save credentials ──────────────────────────────────────
@@ -267,6 +327,7 @@ CONFIG
 ====================================
   MOODLE INSTALL CREDENTIALS
   Generated: $(date)
+  Version:   ${MOODLE_BRANCH}
 ====================================
 Site URL:         ${WWWROOT}
 Moodle Dir:       ${MOODLE_DIR}
@@ -278,13 +339,15 @@ Database Name:    ${DB_NAME}
 Database User:    ${DB_USER}
 Database Pass:    ${DB_PASS}
 ====================================
+KEEP THIS FILE SECURE — DELETE AFTER USE
+====================================
 CREDS
   chmod 600 "$CREDS_FILE"
 
   # ── Done ──────────────────────────────────────────────────
   write_section "Installation Complete"
-  echo -e "  ${BOLD_GREEN}Moodle 4.5 installed on existing server!${RESET}"
-  echo -e "  Access: ${CYAN}${WWWROOT}${RESET}"
+  echo -e "  ${BOLD_GREEN}Moodle ${MOODLE_BRANCH} installed!${RESET}"
+  echo -e "  Access:      ${CYAN}${WWWROOT}${RESET}"
   echo -e "  Credentials: ${CYAN}$CREDS_FILE${RESET}"
   divider
 

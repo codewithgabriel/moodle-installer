@@ -6,54 +6,73 @@ run_fresh_install() {
   run_preflight
 
   write_section "Case A — Fresh Linux Server Install"
-  info "This will install: Apache2, PHP 8.3, MariaDB, Redis, and Moodle 4.5"
+  info "This will install: Apache2, PHP 8.3, MariaDB, Redis, and Moodle"
   confirm "Ready to begin?" || { main_menu; return; }
 
   # ── Collect configuration ─────────────────────────────────
   write_section "Configuration"
 
-  prompt SITE_DOMAIN   "Your Moodle domain or IP" "localhost"
-  prompt MOODLE_DIR    "Moodle installation directory (e.g. /var/www/html/moodle)"
-  prompt MOODLE_DATA   "Moodle data directory (outside webroot, e.g. /var/moodledata)"
-  prompt DB_NAME       "Database name" "kbm_moodle"
-  prompt DB_USER       "Database username" "moodleuser"
+  prompt SITE_DOMAIN  "Your Moodle domain or IP" "localhost"
+  prompt MOODLE_DIR   "Moodle installation directory (e.g. /var/www/html/moodle)"
+  prompt MOODLE_DATA  "Moodle data directory — OUTSIDE webroot (e.g. /var/moodledata)"
+  prompt DB_NAME      "Database name" "moodle"
+  prompt DB_USER      "Database username" "moodleuser"
   prompt_secret DB_PASS "Database password (leave blank to auto-generate)"
   if [[ -z "$DB_PASS" ]]; then
     DB_PASS=$(generate_password)
     echo -e "  ${BOLD_YELLOW}  ★  Generated DB password — saved to credentials file${RESET}" >/dev/tty
   fi
 
-  prompt ADMIN_USER    "Moodle admin username" "admin"
+  prompt ADMIN_USER   "Moodle admin username" "admin"
   prompt_secret ADMIN_PASS "Moodle admin password (leave blank to auto-generate)"
   if [[ -z "$ADMIN_PASS" ]]; then
     ADMIN_PASS=$(generate_password)
     echo -e "  ${BOLD_YELLOW}  ★  Generated admin password — saved to credentials file${RESET}" >/dev/tty
   fi
 
-  prompt ADMIN_EMAIL   "Moodle admin email" "admin@example.com"
-  prompt SITE_NAME     "Site full name" "My Moodle LMS"
-  prompt SITE_SHORT    "Site short name" "LMS"
+  prompt ADMIN_EMAIL  "Moodle admin email" "admin@example.com"
+  prompt SITE_NAME    "Site full name" "My Moodle LMS"
+  prompt SITE_SHORT   "Site short name" "LMS"
 
-  # Ask about SSL
+  # ── Version selection ─────────────────────────────────────
+  local MOODLE_BRANCH
+  pick_moodle_version MOODLE_BRANCH
+
+  # ── SSL choice ────────────────────────────────────────────
   echo ""
   echo -e "  ${BOLD}SSL / HTTPS:${RESET}"
-  echo -e "  ${GREEN}[1]${RESET} Let's Encrypt (requires a real domain + port 80 open)"
-  echo -e "  ${YELLOW}[2]${RESET} Self-signed (for local/dev use)"
+  echo -e "  ${GREEN}[1]${RESET} Let's Encrypt  ${DIM}(requires real domain + port 80 open)${RESET}"
+  echo -e "  ${YELLOW}[2]${RESET} Self-signed    ${DIM}(local/dev use)${RESET}"
   echo -e "  ${DIM}[3]${RESET} Skip SSL for now"
-  read -rp "  SSL choice [1/2/3]: " SSL_CHOICE
+  local SSL_CHOICE
+  while true; do
+    read -rp "  SSL choice [1/2/3]: " SSL_CHOICE
+    [[ "$SSL_CHOICE" =~ ^[123]$ ]] && break
+    warn "Please enter 1, 2, or 3."
+  done
 
   # ── Step 1: System update ─────────────────────────────────
   write_section "Step 1 — System Update"
   run_cmd "Updating package lists" apt-get update
-  run_cmd "Upgrading packages" apt-get upgrade -y
+  # Use noninteractive to avoid kernel upgrade prompts
+  run_cmd "Upgrading packages" env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
   success "System updated"
 
-  # ── Step 2: Install dependencies ──────────────────────────
-  write_section "Step 2 — Installing Dependencies"
+  # ── Step 2: Add PHP repository ────────────────────────────
+  write_section "Step 2 — Adding PHP 8.3 Repository"
+  # ondrej/php PPA is required on Ubuntu for PHP 8.3
+  run_cmd "Installing software-properties-common" apt_install software-properties-common
+  run_cmd "Adding ondrej/php PPA" add-apt-repository -y ppa:ondrej/php
+  run_cmd "Updating package lists" apt-get update
+  success "PHP repository added"
 
-  run_cmd "Installing Apache2" apt_install apache2
-  run_cmd "Installing MariaDB" apt_install mariadb-server mariadb-client
-  run_cmd "Installing Redis" apt_install redis-server
+  # ── Step 3: Install dependencies ──────────────────────────
+  write_section "Step 3 — Installing Dependencies"
+
+  run_cmd "Installing Apache2"   apt_install apache2
+  run_cmd "Installing MariaDB"   apt_install mariadb-server mariadb-client
+  run_cmd "Installing Redis"     apt_install redis-server
   run_cmd "Installing PHP 8.3 + extensions" apt_install \
     php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
     php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
@@ -61,29 +80,35 @@ run_fresh_install() {
     php8.3-exif php8.3-fileinfo libapache2-mod-php8.3
   run_cmd "Installing utilities" apt_install git curl wget unzip cron
 
+  # Set PHP_BIN for this session
+  PHP_BIN="php8.3"
+  PHP_MAJOR_MINOR="8.3"
   success "All dependencies installed"
 
-  # ── Step 3: PHP configuration ─────────────────────────────
-  write_section "Step 3 — PHP Configuration"
-  local php_ini="/etc/php/8.3/apache2/php.ini"
+  # ── Step 4: PHP configuration ─────────────────────────────
+  write_section "Step 4 — PHP Configuration"
+  local php_ini="/etc/php/${PHP_MAJOR_MINOR}/apache2/php.ini"
 
-  sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/' "$php_ini"
-  sed -i 's/^;\?upload_max_filesize\s*=.*/upload_max_filesize = 512M/' "$php_ini"
-  sed -i 's/^;\?post_max_size\s*=.*/post_max_size = 512M/' "$php_ini"
-  sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/' "$php_ini"
-  sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/' "$php_ini"
-  sed -i 's/^;\?opcache.enable\s*=.*/opcache.enable = 1/' "$php_ini"
-  sed -i 's/^;\?opcache.memory_consumption\s*=.*/opcache.memory_consumption = 128/' "$php_ini"
+  if [[ ! -f "$php_ini" ]]; then
+    warn "PHP ini not found at $php_ini — skipping PHP config"
+  else
+    sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/'         "$php_ini"
+    sed -i 's/^;\?upload_max_filesize\s*=.*/upload_max_filesize = 512M/' "$php_ini"
+    sed -i 's/^;\?post_max_size\s*=.*/post_max_size = 512M/'             "$php_ini"
+    sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/'               "$php_ini"
+    sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/'     "$php_ini"
+    sed -i 's/^;\?opcache\.enable\s*=.*/opcache.enable = 1/'              "$php_ini"
+    sed -i 's/^;\?opcache\.memory_consumption\s*=.*/opcache.memory_consumption = 128/' "$php_ini"
+    success "PHP configured: $php_ini"
+  fi
 
-  success "PHP configured"
+  # ── Step 5: MariaDB setup ─────────────────────────────────
+  write_section "Step 5 — Database Setup"
 
-  # ── Step 4: MariaDB setup ─────────────────────────────────
-  write_section "Step 4 — Database Setup"
+  svc_start  mariadb
+  svc_enable mariadb
 
-  systemctl start mariadb
-  systemctl enable mariadb
-
-  mysql -u root <<MYSQL
+  mysql_root <<MYSQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
@@ -92,44 +117,27 @@ MYSQL
 
   success "Database '${DB_NAME}' and user '${DB_USER}' created"
 
-  # ── Step 5: Redis ─────────────────────────────────────────
-  write_section "Step 5 — Redis Setup"
-  systemctl enable redis-server
-  systemctl start redis-server
+  # ── Step 6: Redis ─────────────────────────────────────────
+  write_section "Step 6 — Redis Setup"
+  svc_enable redis-server
+  svc_start  redis-server
   success "Redis running"
 
-  # ── Step 6: Download Moodle ───────────────────────────────
-  write_section "Step 6 — Downloading Moodle 4.5"
-
-  if [[ -d "$MOODLE_DIR" ]]; then
-    warn "Directory $MOODLE_DIR already exists."
-    confirm "Remove and reinstall?" && rm -rf "$MOODLE_DIR"
-  fi
-
-  mkdir -p "$MOODLE_DIR"
+  # ── Step 7: Download Moodle ───────────────────────────────
+  local MOODLE_INSTALL_MODE
+  handle_moodle_dir "$MOODLE_DIR" "$MOODLE_BRANCH" || return
   mkdir -p "$MOODLE_DATA"
+  fetch_moodle "$MOODLE_DIR" "$MOODLE_BRANCH" "$MOODLE_INSTALL_MODE"
 
-  info "Cloning Moodle 4.5 from git (this may take a few minutes)..."
-  git clone --depth=1 --branch MOODLE_405_STABLE \
-    https://github.com/moodle/moodle.git "$MOODLE_DIR" &>/dev/null &
-  local clone_pid=$!
-  spinner $clone_pid "Cloning Moodle 4.5..."
-  wait $clone_pid || { error "git clone failed. Check your internet connection and try again."; exit 1; }
-
-  success "Moodle source downloaded to $MOODLE_DIR"
-
-  # ── Step 7: Permissions ───────────────────────────────────
-  write_section "Step 7 — Setting Permissions"
-
-  chown -R www-data:www-data "$MOODLE_DIR"
-  chown -R www-data:www-data "$MOODLE_DATA"
+  # ── Step 8: Permissions ───────────────────────────────────
+  write_section "Step 8 — Setting Permissions"
+  chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
   chmod -R 755 "$MOODLE_DIR"
   chmod -R 770 "$MOODLE_DATA"
-
   success "Permissions set"
 
-  # ── Step 8: Apache vhost ──────────────────────────────────
-  write_section "Step 8 — Apache Configuration"
+  # ── Step 9: Apache vhost ──────────────────────────────────
+  write_section "Step 9 — Apache Configuration"
 
   local VHOST_FILE="/etc/apache2/sites-available/moodle.conf"
   cat > "$VHOST_FILE" <<VHOST
@@ -149,38 +157,64 @@ MYSQL
 VHOST
 
   a2ensite moodle.conf &>/dev/null
-  a2dissite 000-default.conf &>/dev/null
+  # Only disable default if it's currently enabled
+  a2dissite 000-default.conf &>/dev/null || true
   a2enmod rewrite &>/dev/null
-  systemctl restart apache2
-
+  svc_restart apache2
   success "Apache configured for $SITE_DOMAIN"
 
-  # ── Step 9: SSL ───────────────────────────────────────────
-  write_section "Step 9 — SSL Setup"
+  # ── Step 10: SSL ──────────────────────────────────────────
+  write_section "Step 10 — SSL Setup"
+  local WWWROOT="http://${SITE_DOMAIN}"
   case "$SSL_CHOICE" in
     1)
-      apt_install certbot python3-certbot-apache
-      certbot --apache -d "$SITE_DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" || \
-        warn "Let's Encrypt failed. Check that your domain points to this server and port 80 is open."
+      run_cmd "Installing certbot" apt_install certbot python3-certbot-apache
+      if certbot --apache -d "$SITE_DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL"; then
+        WWWROOT="https://${SITE_DOMAIN}"
+        success "Let's Encrypt certificate installed"
+      else
+        warn "Let's Encrypt failed. Ensure your domain points to this server and port 80 is open."
+        warn "Continuing with HTTP — add SSL manually later."
+      fi
       ;;
     2)
-      apt_install openssl
+      run_cmd "Installing openssl" apt_install openssl
       openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout /etc/ssl/private/moodle-selfsigned.key \
         -out /etc/ssl/certs/moodle-selfsigned.crt \
         -subj "/CN=${SITE_DOMAIN}" &>/dev/null
-      success "Self-signed certificate created"
+      # Add SSL vhost
+      cat >> "$VHOST_FILE" <<SSLVHOST
+
+<VirtualHost *:443>
+    ServerName ${SITE_DOMAIN}
+    DocumentRoot ${MOODLE_DIR}
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/moodle-selfsigned.crt
+    SSLCertificateKeyFile /etc/ssl/private/moodle-selfsigned.key
+    <Directory ${MOODLE_DIR}>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+SSLVHOST
+      a2enmod ssl &>/dev/null
+      svc_restart apache2
+      WWWROOT="https://${SITE_DOMAIN}"
+      success "Self-signed certificate configured"
       ;;
-    3) info "SSL skipped. Remember to add HTTPS before going live." ;;
+    3)
+      info "SSL skipped. Add HTTPS before going live."
+      ;;
   esac
 
-  # ── Step 10: Generate config.php ──────────────────────────
-  write_section "Step 10 — Generating config.php"
+  # ── Step 11: Generate config.php ──────────────────────────
+  write_section "Step 11 — Generating config.php"
 
-  local WWWROOT="http://${SITE_DOMAIN}"
-  [[ "$SSL_CHOICE" == "1" || "$SSL_CHOICE" == "2" ]] && WWWROOT="https://${SITE_DOMAIN}"
-
-  cat > "$MOODLE_DIR/config.php" <<CONFIG
+  # Only write config.php on fresh install — preserve existing on upgrade
+  if [[ "$MOODLE_INSTALL_MODE" != "upgrade" ]]; then
+    cat > "$MOODLE_DIR/config.php" <<CONFIG
 <?php  // Moodle configuration file
 
 unset(\$CFG);
@@ -206,7 +240,7 @@ global \$CFG;
 \$CFG->admin     = 'admin';
 \$CFG->directorypermissions = 0750;
 
-// Redis cache
+// Redis session cache
 \$CFG->session_handler_class = '\core\session\redis';
 \$CFG->session_redis_host = '127.0.0.1';
 \$CFG->session_redis_port = 6379;
@@ -216,43 +250,62 @@ global \$CFG;
 
 require_once(__DIR__ . '/lib/setup.php');
 CONFIG
+    chown www-data:www-data "$MOODLE_DIR/config.php"
+    chmod 640 "$MOODLE_DIR/config.php"
+    success "config.php written"
+  else
+    info "Upgrade mode — existing config.php preserved"
+  fi
 
-  chown www-data:www-data "$MOODLE_DIR/config.php"
-  chmod 640 "$MOODLE_DIR/config.php"
-  success "config.php written"
+  # ── Step 12: CLI install or upgrade ───────────────────────
+  if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
+    write_section "Step 12 — Running Moodle Upgrade"
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
+    local upgrade_pid=$!
+    spinner $upgrade_pid "Upgrading Moodle database..."
+    wait $upgrade_pid || { error "Moodle upgrade failed. Check $LOG_FILE for details."; exit 1; }
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/purge_caches.php" &>/dev/null
+    success "Moodle upgraded to $MOODLE_BRANCH"
+  else
+    write_section "Step 12 — Running Moodle CLI Install"
+    info "Installing database tables and admin account. May take 2–5 minutes..."
+    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/install_database.php" \
+      --agree-license \
+      --fullname="$SITE_NAME" \
+      --shortname="$SITE_SHORT" \
+      --adminuser="$ADMIN_USER" \
+      --adminpass="$ADMIN_PASS" \
+      --adminemail="$ADMIN_EMAIL" &
+    local install_pid=$!
+    spinner $install_pid "Installing Moodle database..."
+    wait $install_pid || { error "Moodle CLI install failed. Check $LOG_FILE for details."; exit 1; }
+    success "Moodle database installed"
+  fi
 
-  # ── Step 11: CLI install ───────────────────────────────────
-  write_section "Step 11 — Running Moodle CLI Install"
-  info "This installs the database tables and creates your admin account."
-  info "May take 2–5 minutes..."
+  # ── Step 13: Cron ─────────────────────────────────────────
+  write_section "Step 13 — Setting Up Cron"
+  local cron_entry="*/1 * * * * /usr/bin/${PHP_BIN} ${MOODLE_DIR}/admin/cli/cron.php >/dev/null 2>&1"
+  add_cron_job "www-data" "$cron_entry"
 
-  sudo -u www-data php "$MOODLE_DIR/admin/cli/install_database.php" \
-    --agree-license \
-    --fullname="$SITE_NAME" \
-    --shortname="$SITE_SHORT" \
-    --adminuser="$ADMIN_USER" \
-    --adminpass="$ADMIN_PASS" \
-    --adminemail="$ADMIN_EMAIL" &
-  local install_pid=$!
-  spinner $install_pid "Installing Moodle database..."
-  wait $install_pid || { error "Moodle CLI install failed. Check $LOG_FILE for details."; exit 1; }
+  # ── Step 14: Firewall guidance ────────────────────────────
+  write_section "Step 14 — Firewall"
+  if check_cmd ufw; then
+    info "UFW detected. Opening ports 80 and 443..."
+    ufw allow 80/tcp &>/dev/null
+    ufw allow 443/tcp &>/dev/null
+    success "Ports 80 and 443 opened in UFW"
+  else
+    warn "No UFW detected. Ensure ports 80 and 443 are open in your cloud provider's firewall/security group."
+  fi
 
-  success "Moodle database installed"
-
-  # ── Step 12: Cron ─────────────────────────────────────────
-  write_section "Step 12 — Setting Up Cron"
-  (crontab -u www-data -l 2>/dev/null; \
-    echo "*/1 * * * * /usr/bin/php ${MOODLE_DIR}/admin/cli/cron.php >/dev/null 2>&1") \
-    | crontab -u www-data -
-  success "Cron job added (runs every minute)"
-
-  # ── Step 13: Save credentials ─────────────────────────────
-  write_section "Step 13 — Saving Credentials"
+  # ── Step 15: Save credentials ─────────────────────────────
+  write_section "Step 15 — Saving Credentials"
   local CREDS_FILE="$HOME/moodle-credentials.txt"
   cat > "$CREDS_FILE" <<CREDS
 ====================================
   MOODLE INSTALL CREDENTIALS
   Generated: $(date)
+  Version:   ${MOODLE_BRANCH}
 ====================================
 
 Site URL:         ${WWWROOT}
@@ -277,7 +330,7 @@ CREDS
 
   # ── Done ──────────────────────────────────────────────────
   write_section "Installation Complete"
-  echo -e "  ${BOLD_GREEN}Moodle 4.5 is installed and running!${RESET}"
+  echo -e "  ${BOLD_GREEN}Moodle ${MOODLE_BRANCH} is installed and running!${RESET}"
   echo ""
   echo -e "  ${BOLD}Access your site:${RESET}  ${CYAN}${WWWROOT}${RESET}"
   echo -e "  ${BOLD}Admin login:${RESET}       ${CYAN}${WWWROOT}/login/index.php${RESET}"
@@ -285,9 +338,7 @@ CREDS
   echo ""
   divider
 
-  # Offer CI/CD next
-  echo ""
-  if confirm "Would you like to set up CI/CD (GitHub Actions deploy pipeline) now?"; then
+  if confirm "Set up CI/CD pipeline now?"; then
     source "$SCRIPT_DIR/scripts/cicd_setup.sh"
     run_cicd_setup
   else
