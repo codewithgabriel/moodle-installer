@@ -77,23 +77,23 @@ run_fresh_install() {
   # ── Step 2: Add PHP repository ────────────────────────────
   write_section "Step 2 — Adding PHP 8.3 Repository"
   # ondrej/php PPA is required on Ubuntu for PHP 8.3
-  run_cmd "Installing software-properties-common" apt_install software-properties-common
-  run_cmd "Adding ondrej/php PPA" add-apt-repository -y ppa:ondrej/php
-  run_cmd "Updating package lists" apt-get update
+  run_cmd "Installing software-properties-common" apt_install software-properties-common || { error "Failed to install software-properties-common. See error above."; exit 1; }
+  run_cmd "Adding ondrej/php PPA" add-apt-repository -y ppa:ondrej/php || { error "Failed to add ondrej/php PPA. See error above."; exit 1; }
+  run_cmd "Updating package lists" apt-get update || { error "Failed to update package lists. See error above."; exit 1; }
   success "PHP repository added"
 
   # ── Step 3: Install dependencies ──────────────────────────
   write_section "Step 3 — Installing Dependencies"
 
-  run_cmd "Installing Apache2"   apt_install apache2
-  run_cmd "Installing MariaDB"   apt_install mariadb-server mariadb-client
-  run_cmd "Installing Redis"     apt_install redis-server
+  run_cmd "Installing Apache2"   apt_install apache2                                    || { error "Failed to install Apache2. See error above."; exit 1; }
+  run_cmd "Installing MariaDB"   apt_install mariadb-server mariadb-client              || { error "Failed to install MariaDB. See error above."; exit 1; }
+  run_cmd "Installing Redis"     apt_install redis-server                               || { error "Failed to install Redis. See error above."; exit 1; }
   run_cmd "Installing PHP 8.3 + extensions" apt_install \
     php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
     php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
     php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
-    php8.3-exif php8.3-fileinfo libapache2-mod-php8.3
-  run_cmd "Installing utilities" apt_install git curl wget unzip cron
+    php8.3-exif php8.3-fileinfo libapache2-mod-php8.3                                   || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
+  run_cmd "Installing utilities" apt_install git curl wget unzip cron                   || { error "Failed to install utilities. See error above."; exit 1; }
 
   # Set PHP_BIN for this session
   PHP_BIN="php8.3"

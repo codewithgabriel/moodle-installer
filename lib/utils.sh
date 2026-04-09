@@ -171,7 +171,7 @@ run_cmd() {
     fi
     
     rm -f "$tmp_err"
-    exit 1
+    return 1
   fi
   rm -f "$tmp_err"
 }
@@ -193,7 +193,7 @@ apt_install() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
-    "$@" &>/dev/null
+    "$@"
 }
 
 write_section() {
@@ -339,7 +339,7 @@ fetch_moodle() {
       git -C "$dir" remote add origin https://github.com/moodle/moodle.git &>/dev/null
     fi
 
-    git -C "$dir" fetch --depth=1 origin "$branch" &>/dev/null &
+    git -C "$dir" fetch --depth=1 origin "$branch" &
     local fetch_pid=$!
     spinner $fetch_pid "Fetching $branch..."
     wait $fetch_pid || { error "git fetch failed. Check your internet connection."; exit 1; }
@@ -350,7 +350,7 @@ fetch_moodle() {
       config_backup=$(cat "$dir/config.php")
     fi
 
-    git -C "$dir" checkout -B "$branch" "origin/$branch" &>/dev/null &
+    git -C "$dir" checkout -B "$branch" "origin/$branch" &
     local checkout_pid=$!
     spinner $checkout_pid "Switching to $branch..."
     wait $checkout_pid || { error "git checkout failed."; exit 1; }
@@ -368,7 +368,7 @@ fetch_moodle() {
     local tmp_dir
     tmp_dir=$(mktemp -d)
     git clone --depth=1 --branch "$branch" \
-      https://github.com/moodle/moodle.git "$tmp_dir" &>/dev/null &
+      https://github.com/moodle/moodle.git "$tmp_dir" &
     local clone_pid=$!
     spinner $clone_pid "Cloning Moodle $branch..."
     wait $clone_pid || { error "git clone failed."; rm -rf "$tmp_dir"; exit 1; }
@@ -379,10 +379,10 @@ fetch_moodle() {
   else
     write_section "Downloading Moodle $branch"
     git clone --depth=1 --branch "$branch" \
-      https://github.com/moodle/moodle.git "$dir" &>/dev/null &
+      https://github.com/moodle/moodle.git "$dir" &
     local clone_pid=$!
     spinner $clone_pid "Cloning Moodle $branch..."
-    wait $clone_pid || { error "git clone failed."; exit 1; }
+    wait $clone_pid || { error "git clone failed. Check your internet connection and that the branch '$branch' exists."; exit 1; }
     success "Moodle $branch downloaded to $dir"
   fi
 }
