@@ -145,16 +145,15 @@ MYSQL
 
   # ── Step 8: Permissions ───────────────────────────────────
   write_section "Step 8 — Setting Permissions"
-  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
-    warn "Moodle is under /root — www-data cannot traverse /root by default."
-    warn "Making /root world-executable so the web server can reach the files."
-    chmod o+x /root
-    chown -R root:www-data "$MOODLE_DIR" "$MOODLE_DATA"
-  else
-    chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
-  fi
+  chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
   chmod -R 755 "$MOODLE_DIR"
   chmod -R 770 "$MOODLE_DATA"
+  # Make all parent directories traversable by www-data
+  local _parent="$MOODLE_DIR"
+  while [[ "$_parent" != "/" ]]; do
+    _parent="$(dirname "$_parent")"
+    [[ -d "$_parent" ]] && chmod o+x "$_parent" 2>/dev/null || true
+  done
   success "Permissions set"
 
   # ── Step 9: Apache vhost ──────────────────────────────────
@@ -279,10 +278,20 @@ CONFIG
   fi
 
   # ── Step 12: CLI install or upgrade ───────────────────────
+  # Ensure www-data can traverse every component of MOODLE_DIR before running CLI
+  local _path_check2="/"
+  for _seg2 in $(echo "$MOODLE_DIR" | tr '/' ' '); do
+    [[ -z "$_seg2" ]] && continue
+    _path_check2="${_path_check2%/}/$_seg2"
+    if [[ -d "$_path_check2" ]]; then
+      local _perms2
+      _perms2=$(stat -c '%a' "$_path_check2")
+      if (( (_perms2 & 1) == 0 )); then
+        chmod o+x "$_path_check2"
+      fi
+    fi
+  done
   local PHP_RUNNER="sudo -u www-data"
-  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
-    PHP_RUNNER=""
-  fi
 
   if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
     write_section "Step 12 — Running Moodle Upgrade"

@@ -178,16 +178,16 @@ MYSQL
   fetch_moodle "$MOODLE_DIR" "$MOODLE_BRANCH" "$MOODLE_INSTALL_MODE"
 
   # ── Permissions ───────────────────────────────────────────
-  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
-    warn "Moodle is under /root — www-data cannot traverse /root by default."
-    warn "Making /root world-executable so nginx/php-fpm can reach the files."
-    chmod o+x /root
-    chown -R root:www-data "$MOODLE_DIR" "$MOODLE_DATA"
-  else
-    chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
-  fi
+  # Ensure www-data owns the moodle files and can traverse parent dirs
+  chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
   chmod -R 755 "$MOODLE_DIR"
   chmod -R 770 "$MOODLE_DATA"
+  # Make all parent directories of MOODLE_DIR traversable by www-data
+  local _parent="$MOODLE_DIR"
+  while [[ "$_parent" != "/" ]]; do
+    _parent="$(dirname "$_parent")"
+    [[ -d "$_parent" ]] && chmod o+x "$_parent" 2>/dev/null || true
+  done
 
   # ── Web server config ─────────────────────────────────────
   write_section "Web Server Configuration"
@@ -315,12 +315,24 @@ CONFIG
   # ── CLI install or upgrade ────────────────────────────────
   write_section "Running Moodle Install / Upgrade"
 
-  # Determine PHP runner — use root if moodle dir is not accessible by www-data
+  # Ensure www-data can traverse every component of MOODLE_DIR
+  # Walk each directory segment and add o+x if missing
+  local _path_check="/"
+  for _seg in $(echo "$MOODLE_DIR" | tr '/' ' '); do
+    [[ -z "$_seg" ]] && continue
+    _path_check="${_path_check%/}/$_seg"
+    if [[ -d "$_path_check" ]]; then
+      local _perms
+      _perms=$(stat -c '%a' "$_path_check")
+      # If others have no execute bit, add it so www-data can traverse
+      if (( (_perms & 1) == 0 )); then
+        chmod o+x "$_path_check"
+        info "Added traverse permission to $_path_check for www-data"
+      fi
+    fi
+  done
+
   local PHP_RUNNER="sudo -u www-data"
-  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
-    warn "Moodle is installed under /root — running CLI as root (www-data cannot access /root)"
-    PHP_RUNNER=""
-  fi
 
   if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
     $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
