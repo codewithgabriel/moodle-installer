@@ -91,8 +91,7 @@ run_fresh_install() {
   run_cmd "Installing PHP 8.3 + extensions" apt_install \
     php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
     php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
-    php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
-    php8.3-exif php8.3-fileinfo libapache2-mod-php8.3                                   || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
+    php8.3-soap php8.3-redis php8.3-opcache libapache2-mod-php8.3                                   || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
   run_cmd "Installing utilities" apt_install git curl wget unzip cron                   || { error "Failed to install utilities. See error above."; exit 1; }
 
   # Set PHP_BIN for this session

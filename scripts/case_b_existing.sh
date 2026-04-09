@@ -95,14 +95,12 @@ run_existing_install() {
       run_cmd "Installing PHP 8.3 + fpm" apt_install \
         php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
         php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
-        php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
-        php8.3-exif php8.3-fileinfo || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
+        php8.3-soap php8.3-redis php8.3-opcache || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
     else
       run_cmd "Installing PHP 8.3 + apache module" apt_install \
         php8.3 php8.3-cli php8.3-mysql php8.3-xml \
         php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
-        php8.3-soap php8.3-redis php8.3-opcache php8.3-sodium \
-        php8.3-exif php8.3-fileinfo libapache2-mod-php8.3 || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
+        php8.3-soap php8.3-redis php8.3-opcache libapache2-mod-php8.3 || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
     fi
     PHP_BIN="php8.3"
     PHP_MAJOR_MINOR="8.3"
