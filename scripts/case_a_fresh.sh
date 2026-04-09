@@ -145,7 +145,14 @@ MYSQL
 
   # ── Step 8: Permissions ───────────────────────────────────
   write_section "Step 8 — Setting Permissions"
-  chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
+  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
+    warn "Moodle is under /root — www-data cannot traverse /root by default."
+    warn "Making /root world-executable so the web server can reach the files."
+    chmod o+x /root
+    chown -R root:www-data "$MOODLE_DIR" "$MOODLE_DATA"
+  else
+    chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
+  fi
   chmod -R 755 "$MOODLE_DIR"
   chmod -R 770 "$MOODLE_DATA"
   success "Permissions set"
@@ -272,18 +279,23 @@ CONFIG
   fi
 
   # ── Step 12: CLI install or upgrade ───────────────────────
+  local PHP_RUNNER="sudo -u www-data"
+  if [[ "$MOODLE_DIR" == /root/* || "$MOODLE_DIR" == /root ]]; then
+    PHP_RUNNER=""
+  fi
+
   if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
     write_section "Step 12 — Running Moodle Upgrade"
-    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
+    $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
     local upgrade_pid=$!
     spinner $upgrade_pid "Upgrading Moodle database..."
     wait $upgrade_pid || { error "Moodle upgrade failed. Check $LOG_FILE for details."; exit 1; }
-    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/purge_caches.php" &>/dev/null
+    $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/purge_caches.php" &>/dev/null
     success "Moodle upgraded to $MOODLE_BRANCH"
   else
     write_section "Step 12 — Running Moodle CLI Install"
     info "Installing database tables and admin account. May take 2–5 minutes..."
-    sudo -u www-data "$PHP_BIN" "$MOODLE_DIR/admin/cli/install_database.php" \
+    $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/install_database.php" \
       --agree-license \
       --fullname="$SITE_NAME" \
       --shortname="$SITE_SHORT" \
