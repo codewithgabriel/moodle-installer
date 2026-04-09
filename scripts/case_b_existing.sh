@@ -172,7 +172,7 @@ MYSQL
   fi
 
   # ── Download Moodle ───────────────────────────────────────
-  local MOODLE_INSTALL_MODE
+  MOODLE_INSTALL_MODE=""
   handle_moodle_dir "$MOODLE_DIR" "$MOODLE_BRANCH" || return
   mkdir -p "$MOODLE_DATA"
   fetch_moodle "$MOODLE_DIR" "$MOODLE_BRANCH" "$MOODLE_INSTALL_MODE"
