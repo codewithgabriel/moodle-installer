@@ -133,6 +133,20 @@ run_existing_install() {
     warn "PHP ini not found at $php_ini — skipping PHP config"
   fi
 
+  # Also patch CLI php.ini — Moodle's install_database.php runs via CLI
+  local php_cli_ini="/etc/php/${PHP_MAJOR_MINOR}/cli/php.ini"
+  if [[ -f "$php_cli_ini" ]]; then
+    sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/'           "$php_cli_ini"
+    sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/'               "$php_cli_ini"
+    sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/'     "$php_cli_ini"
+    success "PHP CLI configured: $php_cli_ini"
+  fi
+
+  # Reload php-fpm to apply fpm ini changes
+  if [[ "$WEB_SERVER" == "nginx" ]]; then
+    svc_reload "php${PHP_MAJOR_MINOR}-fpm" 2>/dev/null || svc_restart "php${PHP_MAJOR_MINOR}-fpm"
+  fi
+
   # ── MariaDB: install if needed ────────────────────────────
   if [[ "$DB_OK" == "false" ]]; then
     write_section "Installing MariaDB"

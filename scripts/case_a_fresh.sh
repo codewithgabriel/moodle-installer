@@ -116,6 +116,15 @@ run_fresh_install() {
     success "PHP configured: $php_ini"
   fi
 
+  # Also patch CLI php.ini — Moodle's install_database.php runs via CLI
+  local php_cli_ini="/etc/php/${PHP_MAJOR_MINOR}/cli/php.ini"
+  if [[ -f "$php_cli_ini" ]]; then
+    sed -i 's/^;\?max_input_vars\s*=.*/max_input_vars = 5000/'           "$php_cli_ini"
+    sed -i 's/^;\?memory_limit\s*=.*/memory_limit = 256M/'               "$php_cli_ini"
+    sed -i 's/^;\?max_execution_time\s*=.*/max_execution_time = 300/'     "$php_cli_ini"
+    success "PHP CLI configured: $php_cli_ini"
+  fi
+
   # ── Step 5: MariaDB setup ─────────────────────────────────
   write_section "Step 5 — Database Setup"
 
