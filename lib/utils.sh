@@ -15,22 +15,77 @@ confirm() {
   [[ "${ans,,}" == "y" ]]
 }
 
+# ── Input validation functions ────────────────────────────────
+validate_domain() {
+  local domain="$1"
+  # Domain must be non-empty and match hostname pattern
+  if [[ -z "$domain" ]]; then
+    warn "Domain cannot be empty"
+    return 1
+  fi
+  # Basic hostname pattern: alphanumeric, hyphens, dots
+  if [[ ! "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+    warn "Invalid domain. Must be a valid hostname (e.g., example.com or learn.example.com)"
+    return 1
+  fi
+  return 0
+}
+
+validate_email() {
+  local email="$1"
+  # Email must contain @ and match basic email pattern
+  if [[ -z "$email" ]]; then
+    warn "Email cannot be empty"
+    return 1
+  fi
+  if [[ ! "$email" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
+    warn "Invalid email. Must contain @ and be in format user@domain.com"
+    return 1
+  fi
+  return 0
+}
+
+validate_path() {
+  local path="$1"
+  # Path must not contain unquoted spaces or special characters that break sed
+  if [[ -z "$path" ]]; then
+    warn "Path cannot be empty"
+    return 1
+  fi
+  # Check for problematic characters: unescaped spaces, quotes, backticks, $, etc.
+  if [[ "$path" =~ [[:space:]\'\"\`\$] ]]; then
+    warn "Invalid path. Must not contain spaces, quotes, or special shell characters"
+    return 1
+  fi
+  return 0
+}
+
+validate_password() {
+  local password="$1"
+  # Password must not contain characters that break sed substitution or MySQL heredocs
+  if [[ -z "$password" ]]; then
+    warn "Password cannot be empty"
+    return 1
+  fi
+  # Check for problematic characters: /, &, \, ', ", `, $
+  if [[ "$password" =~ [/\&\\\'\"\`\$] ]]; then
+    warn "Invalid password. Must not contain: / & \\ ' \" \` \$"
+    return 1
+  fi
+  return 0
+}
+
 prompt() {
-  # prompt <varname> <message> [default]
-  local varname="$1"
-  local msg="$2"
-  local default="${3:-}"
-  local hint=""
+  # prompt <varname> <message> [default] [validator]
+  local varname="$1" msg="$2" default="${3:-}" validator="${4:-}" hint=""
   [[ -n "$default" ]] && hint=" ${DIM}[${default}]${RESET}"
 
   while true; do
     local val
     read -rp "$(echo -e "  ${BOLD_CYAN}→  $msg$hint: ${RESET}")" val
     val="${val:-$default}"
-    if [[ -z "$default" && -z "$val" ]]; then
-      warn "This field is required. Please enter a value."
-      continue
-    fi
+    [[ -z "$default" && -z "$val" ]] && { warn "This field is required. Please enter a value."; continue; }
+    [[ -n "$validator" ]] && ! "$validator" "$val" && continue
     break
   done
 
@@ -79,10 +134,42 @@ run_cmd() {
   "$@" >"$tmp_err" 2>&1 &
   local pid=$!
   spinner "$pid" "$msg"
-  if ! wait "$pid"; then
-    error "Command failed: $*"
-    echo -e "\n${BOLD_RED}  Error output:${RESET}" >&2
-    cat "$tmp_err" >&2
+  wait "$pid"
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local error_output
+    error_output=$(cat "$tmp_err")
+    
+    # Display comprehensive error information
+    echo "" >&2
+    echo "================================================================================" >&2
+    echo "ERROR: Command failed at $timestamp" >&2
+    echo "Step: $msg" >&2
+    echo "Command: $*" >&2
+    echo "Exit Code: $status" >&2
+    echo "--------------------------------------------------------------------------------" >&2
+    echo "Error Output:" >&2
+    echo "$error_output" >&2
+    echo "================================================================================" >&2
+    
+    # Also log to file if LOG_FILE is set
+    if [[ -n "${LOG_FILE:-}" && -f "$LOG_FILE" ]]; then
+      {
+        echo ""
+        echo "================================================================================"
+        echo "ERROR: Command failed at $timestamp"
+        echo "Step: $msg"
+        echo "Command: $*"
+        echo "Exit Code: $status"
+        echo "--------------------------------------------------------------------------------"
+        echo "Error Output:"
+        echo "$error_output"
+        echo "================================================================================"
+      } >> "$LOG_FILE"
+    fi
+    
     rm -f "$tmp_err"
     exit 1
   fi

@@ -33,17 +33,27 @@ run_cpanel_guide() {
   # ── Step 2: Configuration ─────────────────────────────────
   write_section "Step 2 — Your Configuration"
 
-  prompt SITE_DOMAIN  "Your domain (e.g. learn.yoursite.com)"
+  prompt SITE_DOMAIN  "Your domain (e.g. learn.yoursite.com)" "" "validate_domain"
   prompt CPANEL_USER  "Your cPanel username (e.g. myuser)"
-  prompt MOODLE_DIR   "Full path to Moodle (e.g. /home/myuser/public_html/moodle)"
-  prompt MOODLE_DATA  "Full path to moodledata — OUTSIDE public_html (e.g. /home/myuser/moodledata)"
+  prompt MOODLE_DIR   "Full path to Moodle (e.g. /home/myuser/public_html/moodle)" "" "validate_path"
+  prompt MOODLE_DATA  "Full path to moodledata — OUTSIDE public_html (e.g. /home/myuser/moodledata)" "" "validate_path"
   prompt DB_HOST      "Database host" "localhost"
   prompt DB_NAME      "Database name (as created in cPanel, e.g. myuser_moodle)"
   prompt DB_USER      "Database username (e.g. myuser_moodleuser)"
   prompt_secret DB_PASS "Database password"
+  # Validate manually entered password
+  while ! validate_password "$DB_PASS"; do
+    warn "Invalid password. Must not contain: / & \\ ' \" \` \$"
+    prompt_secret DB_PASS "Database password"
+  done
   prompt ADMIN_USER   "Moodle admin username" "admin"
   prompt_secret ADMIN_PASS "Moodle admin password"
-  prompt ADMIN_EMAIL  "Moodle admin email"
+  # Validate manually entered password
+  while ! validate_password "$ADMIN_PASS"; do
+    warn "Invalid password. Must not contain: / & \\ ' \" \` \$"
+    prompt_secret ADMIN_PASS "Moodle admin password"
+  done
+  prompt ADMIN_EMAIL  "Moodle admin email" "" "validate_email"
   prompt SITE_NAME    "Site full name" "My Moodle LMS"
   prompt SITE_SHORT   "Site short name" "LMS"
 
@@ -258,19 +268,23 @@ HTACCESS
   success ".htaccess template generated → $HTACCESS_FILE"
   echo ""
   echo -e "  ${BOLD}Upload these files:${RESET}"
-  echo -e "  ${CYAN}$CONFIG_FILE${RESET}  →  ${MOODLE_DIR}/config.php"
+  echo -e "  ${CYAN}$CONFIG_FILE${RESET}  →  ${BOLD}${MOODLE_DIR}/config.php${RESET}"
   echo -e "  ${CYAN}$HTACCESS_FILE${RESET}  →  ${MOODLE_DIR}/.htaccess"
   echo ""
 
-  if [[ -d "$MOODLE_DIR" ]]; then
+  # Check if MOODLE_DIR exists and is accessible, offer to copy
+  if [[ -d "$MOODLE_DIR" && -w "$MOODLE_DIR" ]]; then
     if confirm "Copy config.php and .htaccess to $MOODLE_DIR now?"; then
       cp "$CONFIG_FILE"   "$MOODLE_DIR/config.php"
       cp "$HTACCESS_FILE" "$MOODLE_DIR/.htaccess"
       chmod 640 "$MOODLE_DIR/config.php"
       success "Files copied to $MOODLE_DIR"
+    else
+      info "Remember to upload config.php to $MOODLE_DIR/config.php manually"
     fi
   else
-    warn "Moodle directory not found locally — upload files manually via SFTP/File Manager."
+    warn "Moodle directory not found locally or not writable — upload files manually via SFTP/File Manager."
+    info "Upload config.php to: ${BOLD}${MOODLE_DIR}/config.php${RESET}"
   fi
   pause
 

@@ -16,6 +16,7 @@ run_cicd_setup() {
 
   prompt REPO_NAME    "GitHub repository (user/repo)" "yourname/moodle-site"
   prompt SERVER_IP    "Production server IP or hostname" "your-server-ip"
+  warn "Using 'root' for SSH is a security risk. Use a dedicated deploy user instead."
   prompt SERVER_USER  "SSH user on server (avoid root — use 'deploy' or 'ubuntu')" "deploy"
   prompt MOODLE_DIR   "Moodle directory on server (e.g. /var/www/html/moodle)"
   prompt MOODLE_DATA  "Moodle data directory (e.g. /var/moodledata)"

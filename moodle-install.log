@@ -41,3 +41,4 @@
 [1;32m  ✔  OS detected: Ubuntu 24.04.4 LTS[0m
 
 [1;31m  ✖  Insufficient disk space. Need 2048MB, have 942MB.[0m
+2026-04-09 22:50:06 ERROR: This script must be run as root or with sudo.

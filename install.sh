@@ -10,9 +10,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 LOG_FILE="$SCRIPT_DIR/moodle-install.log"
 
+# DEPENDENCY ORDER: colors → utils → checks (do not reorder)
 source "$LIB_DIR/colors.sh"
+# Validate colors.sh loaded
+if [[ -z "${RED:-}" ]] || [[ -z "${GREEN:-}" ]] || [[ -z "${RESET:-}" ]]; then
+  echo "ERROR: colors.sh failed to load required color variables" >&2
+  exit 1
+fi
+
 source "$LIB_DIR/utils.sh"
+# Validate utils.sh loaded
+if ! declare -f prompt >/dev/null || ! declare -f run_cmd >/dev/null; then
+  echo "ERROR: utils.sh failed to load required functions (prompt, run_cmd)" >&2
+  exit 1
+fi
+
 source "$LIB_DIR/checks.sh"
+# Validate checks.sh loaded
+if ! declare -f run_preflight >/dev/null || ! declare -f check_webserver >/dev/null; then
+  echo "ERROR: checks.sh failed to load required functions (run_preflight, check_webserver)" >&2
+  exit 1
+fi
 
 # ── Logging ──────────────────────────────────────────────────
 # Simple logging - create log file but don't redirect everything

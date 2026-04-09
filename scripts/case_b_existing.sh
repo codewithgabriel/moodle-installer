@@ -44,15 +44,22 @@ run_existing_install() {
   # ── Collect configuration ─────────────────────────────────
   write_section "Configuration"
 
-  prompt SITE_DOMAIN "Your Moodle domain or IP" "localhost"
-  prompt MOODLE_DIR  "Moodle installation directory (e.g. /var/www/html/moodle)"
-  prompt MOODLE_DATA "Moodle data directory — OUTSIDE webroot (e.g. /var/moodledata)"
+  prompt SITE_DOMAIN "Your Moodle domain or IP" "localhost" "validate_domain"
+  prompt MOODLE_DIR  "Moodle installation directory (e.g. /var/www/html/moodle)" "" "validate_path"
+  prompt MOODLE_DATA "Moodle data directory — OUTSIDE webroot (e.g. /var/moodledata)" "" "validate_path"
   prompt DB_NAME     "Database name" "moodle"
   prompt DB_USER     "Database username" "moodleuser"
   prompt_secret DB_PASS "Database password (leave blank to auto-generate)"
   if [[ -z "$DB_PASS" ]]; then
     DB_PASS=$(generate_password)
     echo -e "  ${BOLD_YELLOW}  ★  Generated DB password — saved to credentials file${RESET}" >/dev/tty
+  else
+    # Validate manually entered password
+    while ! validate_password "$DB_PASS"; do
+      warn "Invalid password. Must not contain: / & \\ ' \" \` \$"
+      prompt_secret DB_PASS "Database password (leave blank to auto-generate)"
+      [[ -z "$DB_PASS" ]] && { DB_PASS=$(generate_password); echo -e "  ${BOLD_YELLOW}  ★  Generated DB password — saved to credentials file${RESET}" >/dev/tty; break; }
+    done
   fi
 
   prompt ADMIN_USER  "Moodle admin username" "admin"
@@ -60,9 +67,16 @@ run_existing_install() {
   if [[ -z "$ADMIN_PASS" ]]; then
     ADMIN_PASS=$(generate_password)
     echo -e "  ${BOLD_YELLOW}  ★  Generated admin password — saved to credentials file${RESET}" >/dev/tty
+  else
+    # Validate manually entered password
+    while ! validate_password "$ADMIN_PASS"; do
+      warn "Invalid password. Must not contain: / & \\ ' \" \` \$"
+      prompt_secret ADMIN_PASS "Moodle admin password (leave blank to auto-generate)"
+      [[ -z "$ADMIN_PASS" ]] && { ADMIN_PASS=$(generate_password); echo -e "  ${BOLD_YELLOW}  ★  Generated admin password — saved to credentials file${RESET}" >/dev/tty; break; }
+    done
   fi
 
-  prompt ADMIN_EMAIL "Moodle admin email" "admin@example.com"
+  prompt ADMIN_EMAIL "Moodle admin email" "admin@example.com" "validate_email"
   prompt SITE_NAME   "Site full name" "My Moodle LMS"
   prompt SITE_SHORT  "Site short name" "LMS"
 
