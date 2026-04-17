@@ -13,14 +13,15 @@ declare -A MOODLE_PHP_VERSIONS=(
 )
 
 # Database version requirements (format: "mariadb:min_version,mysql:min_version")
+# Source: https://moodledev.io/general/releases/
 declare -A MOODLE_DB_VERSIONS=(
-  ["MOODLE_401_STABLE"]="mariadb:10.4.0,mysql:5.7.0"
-  ["MOODLE_402_STABLE"]="mariadb:10.5.0,mysql:8.0.0"
-  ["MOODLE_403_STABLE"]="mariadb:10.5.0,mysql:8.0.0"
-  ["MOODLE_404_STABLE"]="mariadb:10.6.7,mysql:8.0.30"
-  ["MOODLE_405_STABLE"]="mariadb:10.6.7,mysql:8.0.30"
-  ["MOODLE_501_STABLE"]="mariadb:10.6.7,mysql:8.0.30"
-  ["main"]="mariadb:10.6.7,mysql:8.0.30"
+  ["MOODLE_401_STABLE"]="mariadb:10.4.0,mysql:5.7.0"    # Moodle 4.1 LTS
+  ["MOODLE_402_STABLE"]="mariadb:10.5.0,mysql:8.0.0"    # Moodle 4.2
+  ["MOODLE_403_STABLE"]="mariadb:10.5.0,mysql:8.0.0"    # Moodle 4.3
+  ["MOODLE_404_STABLE"]="mariadb:10.6.7,mysql:8.0.30"   # Moodle 4.4
+  ["MOODLE_405_STABLE"]="mariadb:10.6.7,mysql:8.0.30"   # Moodle 4.5 LTS
+  ["MOODLE_501_STABLE"]="mariadb:10.11.0,mysql:8.4.0"   # Moodle 5.1 - Requirements increased in 5.0
+  ["main"]="mariadb:10.11.0,mysql:8.4.0"                # Development branch - Same as 5.1
 )
 
 # Required PHP extensions for each version

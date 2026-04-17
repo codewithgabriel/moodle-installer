@@ -20,8 +20,10 @@ run_existing_install() {
 
   # Detect MariaDB
   local DB_OK=false
+  local DB_VERSION=""
   if check_mariadb; then
     DB_OK=true
+    DB_VERSION=$(detect_database_version)
   fi
 
   divider
@@ -83,6 +85,11 @@ run_existing_install() {
   # ── Version selection ─────────────────────────────────────
   local MOODLE_BRANCH
   pick_moodle_version MOODLE_BRANCH
+
+  # ── Database version compatibility check ──────────────────
+  if [[ "$DB_OK" == "true" ]]; then
+    check_database_compatibility "$MOODLE_BRANCH" "$DB_VERSION" || { error "Installed database version incompatible with selected Moodle version"; exit 1; }
+  fi
 
   # ── PHP: install/upgrade if needed ────────────────────────
   if [[ "$PHP_OK" == "false" ]]; then
@@ -168,8 +175,7 @@ run_existing_install() {
   # ── MariaDB: install if needed ────────────────────────────
   if [[ "$DB_OK" == "false" ]]; then
     write_section "Installing MariaDB"
-    run_cmd "Installing MariaDB server" platform_install_package mariadb-server || { error "Failed to install MariaDB server. See error above."; exit 1; }
-    run_cmd "Installing MariaDB client" platform_install_package mariadb-client || { error "Failed to install MariaDB client. See error above."; exit 1; }
+    install_compatible_database "$MOODLE_BRANCH" || { error "Failed to install compatible MariaDB version. See error above."; exit 1; }
     platform_enable_service mariadb
     platform_start_service mariadb
     success "MariaDB installed"

@@ -53,6 +53,9 @@ run_fresh_install() {
   local MOODLE_BRANCH
   pick_moodle_version MOODLE_BRANCH
 
+  # ── Database compatibility check ──────────────────────────
+  check_database_compatibility "$MOODLE_BRANCH" || { error "Database compatibility check failed"; exit 1; }
+
   # ── SSL choice ────────────────────────────────────────────
   echo ""
   echo -e "  ${BOLD}SSL / HTTPS:${RESET}"
@@ -86,8 +89,14 @@ run_fresh_install() {
   write_section "Step 3 — Installing Dependencies"
 
   run_cmd "Installing Apache2" platform_install_package apache2 || { error "Failed to install Apache2. See error above."; exit 1; }
-  run_cmd "Installing MariaDB server" platform_install_package mariadb-server || { error "Failed to install MariaDB server. See error above."; exit 1; }
+  
+  # Install version-compatible database
+  install_compatible_database "$MOODLE_BRANCH" || { error "Failed to install compatible database. See error above."; exit 1; }
   run_cmd "Installing MariaDB client" platform_install_package mariadb-client || { error "Failed to install MariaDB client. See error above."; exit 1; }
+  
+  # Verify database version meets requirements
+  verify_database_version "$MOODLE_BRANCH" || { error "Database version verification failed"; exit 1; }
+  
   run_cmd "Installing Redis" platform_install_package redis-server || { error "Failed to install Redis. See error above."; exit 1; }
   
   # Install PHP packages one by one for better error reporting

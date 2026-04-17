@@ -186,6 +186,449 @@ mysql_root() {
   fi
 }
 
+# ── Database Version Detection and Compatibility ─────────────
+
+# Detect installed database version (MySQL or MariaDB)
+detect_database_version() {
+  local version=""
+  local db_type=""
+  
+  # Try mysql --version first (works when mysql client is installed)
+  if command -v mysql &>/dev/null; then
+    local version_output
+    version_output=$(mysql --version 2>/dev/null || echo "")
+    
+    # Parse MariaDB version (format: "mysql  Ver 15.1 Distrib 10.11.6-MariaDB")
+    if echo "$version_output" | grep -qi "mariadb"; then
+      db_type="mariadb"
+      version=$(echo "$version_output" | grep -oP '\d+\.\d+\.\d+' | head -1)
+    # Parse MySQL version (format: "mysql  Ver 8.0.45 for Linux")
+    elif echo "$version_output" | grep -qi "mysql"; then
+      db_type="mysql"
+      version=$(echo "$version_output" | grep -oP '\d+\.\d+\.\d+' | head -1)
+    fi
+  fi
+  
+  # If mysql --version didn't work, try querying the database directly
+  if [[ -z "$version" ]] && command -v mysql &>/dev/null; then
+    local db_version
+    db_version=$(mysql_root -e "SELECT VERSION();" -sN 2>/dev/null || echo "")
+    if [[ -n "$db_version" ]]; then
+      if echo "$db_version" | grep -qi "mariadb"; then
+        db_type="mariadb"
+        version=$(echo "$db_version" | grep -oP '\d+\.\d+\.\d+' | head -1)
+      else
+        db_type="mysql"
+        version=$(echo "$db_version" | grep -oP '\d+\.\d+\.\d+' | head -1)
+      fi
+    fi
+  fi
+  
+  # Return format: "type:version" or empty if not detected
+  if [[ -n "$version" && -n "$db_type" ]]; then
+    echo "${db_type}:${version}"
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Get database version available in repositories without installing
+get_repository_database_version() {
+  local package="${1:-mariadb-server}"
+  local version=""
+  
+  # Try apt-cache policy first (shows candidate version)
+  if command -v apt-cache &>/dev/null; then
+    local policy_output
+    policy_output=$(apt-cache policy "$package" 2>/dev/null || echo "")
+    
+    # Extract candidate version
+    version=$(echo "$policy_output" | grep -oP 'Candidate: \K[\d\.\-]+' | grep -oP '^\d+\.\d+\.\d+' | head -1)
+    
+    # If policy didn't work, try madison
+    if [[ -z "$version" ]]; then
+      local madison_output
+      madison_output=$(apt-cache madison "$package" 2>/dev/null | head -1 || echo "")
+      version=$(echo "$madison_output" | awk '{print $3}' | grep -oP '^\d+\.\d+\.\d+' | head -1)
+    fi
+  fi
+  
+  if [[ -n "$version" ]]; then
+    echo "$version"
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Parse database requirements from MOODLE_DB_VERSIONS array
+parse_db_requirements() {
+  local branch="$1"
+  local requirements
+  
+  # Get requirements string from version_config.sh
+  requirements=$(get_database_requirements "$branch")
+  
+  if [[ -z "$requirements" ]]; then
+    error "No database requirements found for branch: $branch"
+    return 1
+  fi
+  
+  # Parse format: "mariadb:10.11.0,mysql:8.4.0"
+  local mariadb_min=""
+  local mysql_min=""
+  
+  # Extract MariaDB minimum version
+  if echo "$requirements" | grep -q "mariadb:"; then
+    mariadb_min=$(echo "$requirements" | grep -oP 'mariadb:\K[\d\.]+')
+  fi
+  
+  # Extract MySQL minimum version
+  if echo "$requirements" | grep -q "mysql:"; then
+    mysql_min=$(echo "$requirements" | grep -oP 'mysql:\K[\d\.]+')
+  fi
+  
+  # Export as variables for caller to use
+  echo "mariadb_min=$mariadb_min"
+  echo "mysql_min=$mysql_min"
+  return 0
+}
+
+# Check database compatibility for selected Moodle version
+check_database_compatibility() {
+  local branch="$1"
+  local installed_db_version="${2:-}"  # Optional: provide if already detected
+  
+  # Get requirements for this Moodle version
+  local requirements
+  requirements=$(get_database_requirements "$branch")
+  
+  if [[ -z "$requirements" ]]; then
+    error "Cannot determine database requirements for Moodle branch: $branch"
+    return 1
+  fi
+  
+  # Parse requirements
+  local req_output
+  req_output=$(parse_db_requirements "$branch")
+  local mariadb_min
+  local mysql_min
+  mariadb_min=$(echo "$req_output" | grep "mariadb_min=" | cut -d= -f2)
+  mysql_min=$(echo "$req_output" | grep "mysql_min=" | cut -d= -f2)
+  
+  # Detect installed database version if not provided
+  local db_info=""
+  if [[ -z "$installed_db_version" ]]; then
+    db_info=$(detect_database_version 2>/dev/null || echo "")
+  else
+    db_info="$installed_db_version"
+  fi
+  
+  # If database is installed, check compatibility
+  if [[ -n "$db_info" ]]; then
+    local db_type
+    local db_version
+    db_type=$(echo "$db_info" | cut -d: -f1)
+    db_version=$(echo "$db_info" | cut -d: -f2)
+    
+    local required_version=""
+    if [[ "$db_type" == "mariadb" ]]; then
+      required_version="$mariadb_min"
+    elif [[ "$db_type" == "mysql" ]]; then
+      required_version="$mysql_min"
+    else
+      error "Unknown database type: $db_type"
+      return 1
+    fi
+    
+    # Compare versions
+    if version_compare "$db_version" ">=" "$required_version"; then
+      success "Database version compatible: $db_type $db_version >= $required_version"
+      return 0
+    else
+      error "Database version incompatible!"
+      error "  Installed: $db_type $db_version"
+      error "  Required:  $db_type $required_version (minimum)"
+      error ""
+      error "Options:"
+      error "  1. Upgrade your database to version $required_version or higher"
+      error "  2. Select a different Moodle version compatible with $db_type $db_version"
+      return 1
+    fi
+  else
+    # No database installed - check if repository version is sufficient
+    local repo_version
+    repo_version=$(get_repository_database_version "mariadb-server" 2>/dev/null || echo "")
+    
+    if [[ -n "$repo_version" && -n "$mariadb_min" ]]; then
+      if version_compare "$repo_version" ">=" "$mariadb_min"; then
+        info "Repository MariaDB version $repo_version is compatible (>= $mariadb_min)"
+        return 0
+      else
+        warn "Repository MariaDB version $repo_version is insufficient (need >= $mariadb_min)"
+        info "Will need to add MariaDB official repository for compatible version"
+        return 2  # Special return code: need repository management
+      fi
+    else
+      # Cannot determine repository version - proceed with caution
+      info "Cannot determine repository database version - will attempt installation"
+      return 0
+    fi
+  fi
+}
+
+# ── Repository Management ─────────────────────────────────────
+
+# Add MariaDB official repository for newer versions
+add_mariadb_repository() {
+  local required_version="${1:-10.11}"
+  
+  info "Adding MariaDB official repository for version $required_version..."
+  
+  # Detect OS distribution
+  if [[ ! -f /etc/os-release ]]; then
+    error "Cannot detect OS distribution"
+    return 1
+  fi
+  
+  # shellcheck source=/dev/null
+  source /etc/os-release
+  
+  local os_id="$ID"
+  local os_version_codename="${VERSION_CODENAME:-}"
+  
+  # Determine repository codename
+  local repo_codename=""
+  case "$os_id" in
+    ubuntu)
+      repo_codename="$os_version_codename"
+      ;;
+    debian)
+      repo_codename="$os_version_codename"
+      ;;
+    *)
+      error "Unsupported OS for MariaDB repository: $os_id"
+      return 1
+      ;;
+  esac
+  
+  if [[ -z "$repo_codename" ]]; then
+    error "Cannot determine OS version codename"
+    return 1
+  fi
+  
+  info "Detected OS: $os_id $repo_codename"
+  
+  # Install prerequisites
+  if ! command -v curl &>/dev/null; then
+    info "Installing curl..."
+    apt_install curl || { error "Failed to install curl"; return 1; }
+  fi
+  
+  if ! command -v gpg &>/dev/null; then
+    info "Installing gnupg..."
+    apt_install gnupg || { error "Failed to install gnupg"; return 1; }
+  fi
+  
+  # Add MariaDB GPG key
+  info "Adding MariaDB GPG key..."
+  local keyring_path="/usr/share/keyrings/mariadb-keyring.gpg"
+  
+  if ! curl -fsSL https://mariadb.org/mariadb_release_signing_key.asc | gpg --dearmor -o "$keyring_path" 2>/dev/null; then
+    error "Failed to add MariaDB GPG key"
+    return 1
+  fi
+  
+  # Determine MariaDB major.minor version for repository URL
+  local mariadb_major_minor
+  mariadb_major_minor=$(echo "$required_version" | grep -oP '^\d+\.\d+')
+  
+  # Create repository configuration
+  local repo_file="/etc/apt/sources.list.d/mariadb.list"
+  info "Creating repository configuration: $repo_file"
+  
+  cat > "$repo_file" <<EOF
+# MariaDB $mariadb_major_minor repository
+deb [signed-by=$keyring_path] https://mirror.mariadb.org/repo/$mariadb_major_minor/$os_id $repo_codename main
+EOF
+  
+  if [[ ! -f "$repo_file" ]]; then
+    error "Failed to create repository file"
+    return 1
+  fi
+  
+  # Update package lists
+  info "Updating package lists..."
+  if ! apt-get update &>/dev/null; then
+    error "Failed to update package lists after adding MariaDB repository"
+    return 1
+  fi
+  
+  # Verify repository was added successfully
+  if ! apt-cache policy mariadb-server 2>/dev/null | grep -q "mirror.mariadb.org"; then
+    error "MariaDB repository was not added successfully"
+    return 1
+  fi
+  
+  success "MariaDB official repository added successfully"
+  return 0
+}
+
+# Install compatible database version for selected Moodle version
+install_compatible_database() {
+  local branch="$1"
+  
+  if [[ -z "$branch" ]]; then
+    error "Moodle branch parameter required"
+    return 1
+  fi
+  
+  info "Determining required database version for $branch..."
+  
+  # Get requirements for this Moodle version
+  local requirements
+  requirements=$(get_database_requirements "$branch")
+  
+  if [[ -z "$requirements" ]]; then
+    error "Cannot determine database requirements for branch: $branch"
+    return 1
+  fi
+  
+  # Parse requirements
+  local req_output
+  req_output=$(parse_db_requirements "$branch")
+  local mariadb_min
+  mariadb_min=$(echo "$req_output" | grep "mariadb_min=" | cut -d= -f2)
+  
+  if [[ -z "$mariadb_min" ]]; then
+    error "Cannot parse MariaDB minimum version from requirements"
+    return 1
+  fi
+  
+  info "Required MariaDB version: $mariadb_min or higher"
+  
+  # Check if default repository provides compatible version
+  local repo_version
+  repo_version=$(get_repository_database_version "mariadb-server" 2>/dev/null || echo "")
+  
+  local need_official_repo=false
+  if [[ -n "$repo_version" ]]; then
+    info "Default repository provides MariaDB $repo_version"
+    
+    if version_compare "$repo_version" ">=" "$mariadb_min"; then
+      info "Default repository version is sufficient"
+    else
+      warn "Default repository version $repo_version is insufficient (need >= $mariadb_min)"
+      need_official_repo=true
+    fi
+  else
+    warn "Cannot determine repository version - will attempt to add MariaDB official repository"
+    need_official_repo=true
+  fi
+  
+  # Add MariaDB official repository if needed
+  if $need_official_repo; then
+    info "Adding MariaDB official repository for version $mariadb_min..."
+    if ! add_mariadb_repository "$mariadb_min"; then
+      error "Failed to add MariaDB official repository"
+      return 1
+    fi
+  fi
+  
+  # Determine package name to install
+  local package_name="mariadb-server"
+  
+  # For specific versions from official repo, use versioned package if available
+  if $need_official_repo; then
+    local mariadb_major_minor
+    mariadb_major_minor=$(echo "$mariadb_min" | grep -oP '^\d+\.\d+')
+    
+    # Check if versioned package exists
+    if apt-cache show "mariadb-server-${mariadb_major_minor}" &>/dev/null; then
+      package_name="mariadb-server-${mariadb_major_minor}"
+      info "Using versioned package: $package_name"
+    else
+      info "Versioned package not available, using: $package_name"
+    fi
+  fi
+  
+  # Install MariaDB
+  info "Installing $package_name..."
+  if ! apt_install "$package_name"; then
+    error "Failed to install $package_name"
+    return 1
+  fi
+  
+  success "MariaDB installed successfully"
+  
+  # Verify installed version meets requirements
+  if ! verify_database_version "$branch"; then
+    error "Installed database version does not meet requirements"
+    return 1
+  fi
+  
+  return 0
+}
+
+# Verify installed database version meets requirements
+verify_database_version() {
+  local branch="$1"
+  
+  if [[ -z "$branch" ]]; then
+    error "Moodle branch parameter required"
+    return 1
+  fi
+  
+  info "Verifying database version for $branch..."
+  
+  # Get requirements
+  local req_output
+  req_output=$(parse_db_requirements "$branch")
+  local mariadb_min
+  local mysql_min
+  mariadb_min=$(echo "$req_output" | grep "mariadb_min=" | cut -d= -f2)
+  mysql_min=$(echo "$req_output" | grep "mysql_min=" | cut -d= -f2)
+  
+  # Detect installed database version
+  local db_info
+  db_info=$(detect_database_version 2>/dev/null || echo "")
+  
+  if [[ -z "$db_info" ]]; then
+    error "Cannot detect installed database version"
+    return 1
+  fi
+  
+  local db_type
+  local db_version
+  db_type=$(echo "$db_info" | cut -d: -f1)
+  db_version=$(echo "$db_info" | cut -d: -f2)
+  
+  info "Detected: $db_type $db_version"
+  
+  # Determine required version based on database type
+  local required_version=""
+  if [[ "$db_type" == "mariadb" ]]; then
+    required_version="$mariadb_min"
+  elif [[ "$db_type" == "mysql" ]]; then
+    required_version="$mysql_min"
+  else
+    error "Unknown database type: $db_type"
+    return 1
+  fi
+  
+  # Compare versions
+  if version_compare "$db_version" ">=" "$required_version"; then
+    success "Database version verified: $db_type $db_version >= $required_version"
+    return 0
+  else
+    error "Database version insufficient!"
+    error "  Installed: $db_type $db_version"
+    error "  Required:  $db_type $required_version (minimum)"
+    return 1
+  fi
+}
+
 run_preflight() {
   write_section "Pre-flight Checks"
   check_os
