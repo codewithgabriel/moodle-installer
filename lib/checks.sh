@@ -43,7 +43,12 @@ detect_php() {
 }
 
 check_php_version() {
-  if detect_php; then
+  set +e
+  detect_php
+  local result=$?
+  set -e
+  
+  if [[ $result -eq 0 ]]; then
     success "PHP ${PHP_VER} detected (${PHP_BIN}) — compatible with Moodle"
     return 0
   else
@@ -53,7 +58,12 @@ check_php_version() {
 }
 
 check_mariadb() {
-  if check_cmd mysql; then
+  set +e
+  check_cmd mysql
+  local cmd_result=$?
+  set -e
+  
+  if [[ $cmd_result -eq 0 ]]; then
     local ver
     ver=$(mysql --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
     success "MariaDB/MySQL ${ver} detected"
@@ -65,10 +75,17 @@ check_mariadb() {
 }
 
 check_webserver() {
-  if check_cmd apache2; then
+  set +e
+  check_cmd apache2
+  local apache_result=$?
+  check_cmd nginx
+  local nginx_result=$?
+  set -e
+  
+  if [[ $apache_result -eq 0 ]]; then
     success "Apache2 detected" >&2
     echo "apache2"
-  elif check_cmd nginx; then
+  elif [[ $nginx_result -eq 0 ]]; then
     success "Nginx detected" >&2
     echo "nginx"
   else
@@ -130,7 +147,12 @@ check_internet() {
 
 check_systemctl() {
   # Detect if systemctl is functional (fails in containers/LXC without systemd)
-  if ! systemctl status &>/dev/null; then
+  set +e
+  systemctl status &>/dev/null
+  local result=$?
+  set -e
+  
+  if [[ $result -ne 0 ]]; then
     warn "systemctl is not available or not functional (container/LXC environment?)."
     warn "Service management commands may fail. You may need to start services manually."
     SYSTEMCTL_OK=false

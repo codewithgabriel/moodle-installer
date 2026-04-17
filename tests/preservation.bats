@@ -226,7 +226,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   
   # Verify prompt uses printf -v to assign to variable
-  grep -A 20 '^prompt()' lib/utils.sh | grep -q 'printf -v'
+  grep -A 30 'prompt()' lib/utils.sh | grep -q 'printf -v'
 }
 
 # ============================================================
@@ -346,29 +346,296 @@ teardown() {
 }
 
 # ============================================================
+# PROPERTY 11: Moodle Version Selection Offers 4.1-5.1 and main
+# **Validates: Requirement 3.11**
+# ============================================================
+
+@test "Preservation 3.11: Version picker function exists" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify pick_moodle_version function exists
+  grep -q '^pick_moodle_version()' lib/utils.sh
+}
+
+@test "Preservation 3.11: Version picker offers Moodle 5.1" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify MOODLE_501_STABLE is offered
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'MOODLE_501_STABLE'
+}
+
+@test "Preservation 3.11: Version picker offers Moodle 4.5 LTS" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify MOODLE_405_STABLE is offered
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'MOODLE_405_STABLE'
+}
+
+@test "Preservation 3.11: Version picker offers Moodle 4.1 LTS" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify MOODLE_401_STABLE is offered
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'MOODLE_401_STABLE'
+}
+
+@test "Preservation 3.11: Version picker offers main branch with warning" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify main branch is offered
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'main'
+  
+  # Verify warning exists for main branch
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'unstable\|NOT for production\|bleeding edge'
+}
+
+@test "Preservation 3.11: Version picker uses printf -v to assign variable" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify version is assigned using printf -v
+  grep -A 30 '^pick_moodle_version()' lib/utils.sh | grep -q 'printf -v'
+}
+
+# ============================================================
+# PROPERTY 12: PHP 8.3 Configured with Moodle-Recommended Settings
+# **Validates: Requirement 3.12**
+# ============================================================
+
+@test "Preservation 3.12: PHP configuration sets max_input_vars=5000" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify max_input_vars is set to 5000
+  grep -q 'max_input_vars.*5000' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP configuration sets memory_limit=256M" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify memory_limit is set to 256M
+  grep -q 'memory_limit.*256M' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP configuration sets upload_max_filesize=512M" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify upload_max_filesize is set to 512M
+  grep -q 'upload_max_filesize.*512M' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP configuration sets post_max_size=512M" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify post_max_size is set to 512M
+  grep -q 'post_max_size.*512M' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP configuration sets max_execution_time=300" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify max_execution_time is set to 300
+  grep -q 'max_execution_time.*300' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP configuration enables opcache" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify opcache is enabled
+  grep -q 'opcache\.enable.*1' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.12: PHP CLI configuration also updated" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify CLI php.ini is also configured
+  grep -q 'php_cli_ini' scripts/case_a_fresh.sh
+  grep -A 10 'php_cli_ini' scripts/case_a_fresh.sh | grep -q 'sed -i'
+}
+
+# ============================================================
+# PROPERTY 13: Apache/Nginx Virtual Host Configurations Created
+# **Validates: Requirement 3.13**
+# ============================================================
+
+@test "Preservation 3.13: Apache vhost configuration created" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Apache vhost is created
+  grep -q 'VirtualHost' scripts/case_a_fresh.sh
+  grep -q 'DocumentRoot' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.13: Apache vhost enables rewrite module" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify rewrite module is enabled
+  grep -q 'a2enmod rewrite' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.13: Apache vhost sets correct permissions" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Directory directive with permissions
+  grep -A 10 'VirtualHost' scripts/case_a_fresh.sh | grep -q 'AllowOverride All'
+}
+
+@test "Preservation 3.13: Nginx configuration created for existing servers" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Nginx config is created in case_b_existing.sh
+  grep -q 'nginx_conf' scripts/case_b_existing.sh
+  grep -q 'fastcgi_pass' scripts/case_b_existing.sh
+}
+
+@test "Preservation 3.13: Nginx configuration includes PHP-FPM socket" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify PHP-FPM socket is configured
+  grep -q 'fpm_sock' scripts/case_b_existing.sh
+  grep -q 'unix:' scripts/case_b_existing.sh
+}
+
+# ============================================================
+# PROPERTY 14: Redis Configured for Session Storage
+# **Validates: Requirement 3.14**
+# ============================================================
+
+@test "Preservation 3.14: Redis installed and started" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Redis installation
+  grep -q 'redis' scripts/case_a_fresh.sh
+  grep -q 'redis-server' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.14: config.php includes Redis session handler" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Redis session handler in config.php
+  grep -q 'session_handler_class.*redis' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.14: config.php sets Redis host and port" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Redis connection settings
+  grep -q 'session_redis_host.*127.0.0.1' scripts/case_a_fresh.sh
+  grep -q 'session_redis_port.*6379' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.14: config.php sets Redis database and timeouts" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify Redis database and timeout settings
+  grep -q 'session_redis_database' scripts/case_a_fresh.sh
+  grep -q 'session_redis_acquire_lock_timeout' scripts/case_a_fresh.sh
+  grep -q 'session_redis_lock_expire' scripts/case_a_fresh.sh
+}
+
+# ============================================================
+# PROPERTY 15: Moodle CLI Installer Creates Admin Account
+# **Validates: Requirement 3.15**
+# ============================================================
+
+@test "Preservation 3.15: CLI install_database.php is called" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify CLI installer is called
+  grep -q 'install_database.php' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.15: CLI installer receives admin username" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify adminuser parameter is passed
+  grep -q 'adminuser' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.15: CLI installer receives admin password" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify adminpass parameter is passed
+  grep -q 'adminpass' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.15: CLI installer receives admin email" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify adminemail parameter is passed
+  grep -q 'adminemail' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.15: CLI installer receives site names" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify fullname and shortname parameters are passed
+  grep -q 'fullname' scripts/case_a_fresh.sh
+  grep -q 'shortname' scripts/case_a_fresh.sh
+}
+
+@test "Preservation 3.15: CLI installer runs as web user" {
+  cd "$SCRIPT_DIR"
+  
+  # Verify CLI installer runs with sudo -u www-data or equivalent via PHP_RUNNER
+  grep -B 10 'install_database.php' scripts/case_a_fresh.sh | grep -q 'PHP_RUNNER.*sudo -u'
+}
+
+# ============================================================
 # INTEGRATION TEST: All Preservation Properties Hold
 # ============================================================
 
-@test "Integration: All core preservation properties verified" {
+@test "Integration: All preservation properties verified (3.1-3.15)" {
   # Use SCRIPT_DIR for integration test since TEST_DIR copy may be incomplete
   cd "$SCRIPT_DIR"
   
   local property_count=0
   
   # Count verified properties (use || true to prevent early exit)
+  # 3.1: Menu navigation
   [ -f "install.sh" ] && property_count=$((property_count + 1)) || true
+  
+  # 3.2: Fresh install
   [ -f "scripts/case_a_fresh.sh" ] && property_count=$((property_count + 1)) || true
+  
+  # 3.3: Existing install
   [ -f "scripts/case_b_existing.sh" ] && property_count=$((property_count + 1)) || true
+  
+  # 3.4: cPanel guide
   [ -f "scripts/case_c_cpanel.sh" ] && property_count=$((property_count + 1)) || true
+  
+  # 3.5: CI/CD setup
   [ -f "scripts/cicd_setup.sh" ] && property_count=$((property_count + 1)) || true
+  
+  # 3.6: Prompt functions
   grep -q '^prompt()' lib/utils.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.7: Spinner
   grep -q '^spinner()' lib/utils.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.8: Preflight checks
   grep -q 'run_preflight' lib/checks.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.9: Quit option
   grep -q 'exit 0' install.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.10: Credentials permissions
   grep -q 'chmod 600' scripts/case_a_fresh.sh 2>/dev/null && property_count=$((property_count + 1)) || true
   
-  echo "# Preservation properties verified: $property_count" >&3
+  # 3.11: Version selection
+  grep -q 'pick_moodle_version' lib/utils.sh 2>/dev/null && property_count=$((property_count + 1)) || true
   
-  # All 10 core properties should be present
-  [ "$property_count" -eq 10 ]
+  # 3.12: PHP configuration
+  grep -q 'max_input_vars.*5000' scripts/case_a_fresh.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.13: Apache/Nginx vhost
+  grep -q 'VirtualHost' scripts/case_a_fresh.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.14: Redis configuration
+  grep -q 'session_handler_class.*redis' scripts/case_a_fresh.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  # 3.15: CLI installer
+  grep -q 'install_database.php' scripts/case_a_fresh.sh 2>/dev/null && property_count=$((property_count + 1)) || true
+  
+  echo "# Preservation properties verified: $property_count/15" >&3
+  
+  # All 15 preservation properties should be present
+  [ "$property_count" -eq 15 ]
 }

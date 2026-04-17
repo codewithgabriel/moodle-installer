@@ -344,13 +344,65 @@ handle_moodle_dir() {
             return 0
             ;;
           2)
-            warn "This will DELETE all Moodle files in $dir (database and moodledata are untouched)."
-            if confirm "Are you absolutely sure?"; then
-              rm -rf "$dir"
-              mkdir -p "$dir"
-              MOODLE_INSTALL_MODE="fresh"
-              return 0
+            # Check if database exists
+            local db_exists=false
+            if [[ -f "$dir/config.php" ]]; then
+              # Extract database name from config.php
+              local db_name
+              db_name=$(grep -oP "^\\\$CFG->dbname\s*=\s*['\"]\\K[^'\"]*" "$dir/config.php" 2>/dev/null || echo "")
+              if [[ -n "$db_name" ]]; then
+                # Check if database exists
+                if mysql_root -e "USE \`${db_name}\`;" &>/dev/null; then
+                  db_exists=true
+                  warn ""
+                  warn "CRITICAL: Database '${db_name}' exists and contains Moodle data."
+                  warn "This will DELETE the database '${db_name}'. All Moodle data will be lost."
+                  warn "This includes: courses, users, grades, files, and all content."
+                  warn ""
+                  
+                  # Backup config.php before proceeding
+                  if [[ -f "$dir/config.php" ]]; then
+                    cp "$dir/config.php" "$dir/config.php.bak.$(date +%s)"
+                    info "config.php backed up"
+                  fi
+                  
+                  # Require explicit confirmation
+                  echo -e "  ${BOLD_RED}Type 'DELETE' to confirm (case-sensitive):${RESET}"
+                  local confirmation
+                  read -rp "  " confirmation
+                  if [[ "$confirmation" != "DELETE" ]]; then
+                    info "Reinstall cancelled. No changes made."
+                    return 1
+                  fi
+                  
+                  # Drop the database
+                  mysql_root -e "DROP DATABASE IF EXISTS \`${db_name}\`;" || {
+                    error "Failed to drop database '${db_name}'"
+                    return 1
+                  }
+                  success "Database '${db_name}' deleted"
+                fi
+              fi
             fi
+            
+            # If no database or database already handled, proceed with file deletion
+            if ! $db_exists; then
+              warn "This will DELETE all Moodle files in $dir (database and moodledata are untouched)."
+              if ! confirm "Are you absolutely sure?"; then
+                return 1
+              fi
+              
+              # Backup config.php if it exists
+              if [[ -f "$dir/config.php" ]]; then
+                cp "$dir/config.php" "$dir/config.php.bak.$(date +%s)"
+                info "config.php backed up"
+              fi
+            fi
+            
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            MOODLE_INSTALL_MODE="fresh"
+            return 0
             ;;
           3) main_menu; return 1 ;;
           *) warn "Please enter 1, 2, or 3." ;;
@@ -368,12 +420,62 @@ handle_moodle_dir() {
         read -rp "$(echo -e "  ${BOLD_CYAN}→  Choice [1/2]: ${RESET}")" _dir_choice
         case "$_dir_choice" in
           1)
-            if confirm "Wipe $dir and reinstall Moodle $current_version?"; then
-              rm -rf "$dir"
-              mkdir -p "$dir"
-              MOODLE_INSTALL_MODE="fresh"
-              return 0
+            # Check if database exists
+            local db_exists=false
+            if [[ -f "$dir/config.php" ]]; then
+              # Extract database name from config.php
+              local db_name
+              db_name=$(grep -oP "^\\\$CFG->dbname\s*=\s*['\"]\\K[^'\"]*" "$dir/config.php" 2>/dev/null || echo "")
+              if [[ -n "$db_name" ]]; then
+                # Check if database exists
+                if mysql_root -e "USE \`${db_name}\`;" &>/dev/null; then
+                  db_exists=true
+                  warn ""
+                  warn "CRITICAL: Database '${db_name}' exists and contains Moodle data."
+                  warn "This will DELETE the database '${db_name}'. All Moodle data will be lost."
+                  warn "This includes: courses, users, grades, files, and all content."
+                  warn ""
+                  
+                  # Backup config.php before proceeding
+                  cp "$dir/config.php" "$dir/config.php.bak.$(date +%s)"
+                  info "config.php backed up"
+                  
+                  # Require explicit confirmation
+                  echo -e "  ${BOLD_RED}Type 'DELETE' to confirm (case-sensitive):${RESET}"
+                  local confirmation
+                  read -rp "  " confirmation
+                  if [[ "$confirmation" != "DELETE" ]]; then
+                    info "Reinstall cancelled. No changes made."
+                    return 1
+                  fi
+                  
+                  # Drop the database
+                  mysql_root -e "DROP DATABASE IF EXISTS \`${db_name}\`;" || {
+                    error "Failed to drop database '${db_name}'"
+                    return 1
+                  }
+                  success "Database '${db_name}' deleted"
+                fi
+              fi
             fi
+            
+            # If no database or database already handled, proceed with file deletion
+            if ! $db_exists; then
+              if ! confirm "Wipe $dir and reinstall Moodle $current_version?"; then
+                return 1
+              fi
+              
+              # Backup config.php if it exists
+              if [[ -f "$dir/config.php" ]]; then
+                cp "$dir/config.php" "$dir/config.php.bak.$(date +%s)"
+                info "config.php backed up"
+              fi
+            fi
+            
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            MOODLE_INSTALL_MODE="fresh"
+            return 0
             ;;
           2) main_menu; return 1 ;;
           *) warn "Please enter 1 or 2." ;;
