@@ -88,7 +88,12 @@ run_existing_install() {
 
   # ── Database version compatibility check ──────────────────
   if [[ "$DB_OK" == "true" ]]; then
-    check_database_compatibility "$MOODLE_BRANCH" "$DB_VERSION" || { error "Installed database version incompatible with selected Moodle version"; exit 1; }
+    if ! check_database_compatibility "$MOODLE_BRANCH" "$DB_VERSION" 2>/dev/null; then
+      warn "Existing database version is incompatible with selected Moodle version"
+      warn "Will upgrade database to compatible version..."
+      # Mark database as needing upgrade/reinstall
+      DB_OK=false
+    fi
   fi
 
   # ── PHP: install/upgrade if needed ────────────────────────
@@ -172,9 +177,9 @@ run_existing_install() {
     platform_reload_service "php${PHP_MAJOR_MINOR}-fpm" 2>/dev/null || platform_restart_service "php${PHP_MAJOR_MINOR}-fpm"
   fi
 
-  # ── MariaDB: install if needed ────────────────────────────
+  # ── MariaDB: install/upgrade if needed ────────────────────────────
   if [[ "$DB_OK" == "false" ]]; then
-    write_section "Installing MariaDB"
+    write_section "Installing/Upgrading MariaDB"
     install_compatible_database "$MOODLE_BRANCH" || { error "Failed to install compatible MariaDB version. See error above."; exit 1; }
     platform_enable_service mariadb
     platform_start_service mariadb
