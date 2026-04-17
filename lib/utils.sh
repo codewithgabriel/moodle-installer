@@ -77,14 +77,22 @@ validate_password() {
 
 prompt() {
   # prompt <varname> <message> [default] [validator]
-  local varname="$1" msg="$2" default="${3:-}" validator="${4:-}" hint=""
-  [[ -n "$default" ]] && hint=" ${DIM}[${default}]${RESET}"
+  # If default is omitted entirely → field is required
+  # If default is "" (empty string) → field is optional
+  # If default is a non-empty string → shown as hint, used when input is blank
+  local varname="$1" msg="$2" validator="${4:-}" hint=""
+  local has_default=false default=""
+  if [[ $# -ge 3 ]]; then
+    has_default=true
+    default="$3"
+    [[ -n "$default" ]] && hint=" ${DIM}[${default}]${RESET}"
+  fi
 
   while true; do
     local val
     read -rp "$(echo -e "  ${BOLD_CYAN}→  $msg$hint: ${RESET}")" val
     val="${val:-$default}"
-    [[ -z "$default" && -z "$val" ]] && { warn "This field is required. Please enter a value."; continue; }
+    ! $has_default && [[ -z "$val" ]] && { warn "This field is required. Please enter a value."; continue; }
     [[ -n "$validator" ]] && ! "$validator" "$val" && continue
     break
   done

@@ -209,7 +209,13 @@ MYSQL
 
   if [[ "$WEB_SERVER" == "nginx" ]]; then
     local fpm_sock="/var/run/php/php${PHP_MAJOR_MINOR}-fpm.sock"
-    cat > "/etc/nginx/sites-available/moodle" <<NGINX
+    local nginx_conf="/etc/nginx/sites-available/${SITE_DOMAIN}"
+
+    # Disable any existing config for this domain before writing ours
+    rm -f "/etc/nginx/sites-enabled/${SITE_DOMAIN}"
+    rm -f "/etc/nginx/sites-enabled/moodle"
+
+    cat > "$nginx_conf" <<NGINX
 server {
     listen 80;
     server_name ${SITE_DOMAIN};
@@ -238,14 +244,14 @@ server {
     location /dataroot/        { deny all; }
 }
 NGINX
-    ln -sf /etc/nginx/sites-available/moodle /etc/nginx/sites-enabled/moodle
-    # Remove default if it conflicts
+    ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/${SITE_DOMAIN}"
+    # Remove generic default if it conflicts
     rm -f /etc/nginx/sites-enabled/default
     if nginx -t &>/dev/null; then
       svc_reload nginx
       success "Nginx configured"
     else
-      error "Nginx config test failed. Check /etc/nginx/sites-available/moodle"
+      error "Nginx config test failed. Check $nginx_conf"
       nginx -t
       exit 1
     fi
