@@ -127,12 +127,35 @@ spinner() {
   local msg="${2:-Working...}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local i=0
+  
+  # Check if process exists before starting spinner
+  if ! kill -0 "$pid" 2>/dev/null; then
+    # Process already finished, check exit status
+    wait "$pid" 2>/dev/null
+    local status=$?
+    if [[ $status -eq 0 ]]; then
+      printf "\r  ${BOLD_GREEN}✔${RESET}  $msg\n"
+    else
+      printf "\r  ${BOLD_RED}✖${RESET}  $msg (failed)\n"
+    fi
+    return $status
+  fi
+  
   while kill -0 "$pid" 2>/dev/null; do
     printf "\r  ${CYAN}${frames[$i]}${RESET}  $msg"
     i=$(( (i+1) % ${#frames[@]} ))
     sleep 0.1
   done
-  printf "\r  ${BOLD_GREEN}✔${RESET}  $msg\n"
+  
+  # Get exit status after process completes
+  wait "$pid" 2>/dev/null
+  local status=$?
+  if [[ $status -eq 0 ]]; then
+    printf "\r  ${BOLD_GREEN}✔${RESET}  $msg\n"
+  else
+    printf "\r  ${BOLD_RED}✖${RESET}  $msg (failed)\n"
+  fi
+  return $status
 }
 
 run_cmd() {
@@ -223,27 +246,29 @@ pick_moodle_version() {
   echo ""
   echo -e "  ${BOLD}Select Moodle version:${RESET}"
   echo ""
-  echo -e "  ${GREEN}[1]${RESET} Moodle 4.5  ${DIM}(MOODLE_405_STABLE — LTS, recommended)${RESET}"
-  echo -e "  ${GREEN}[2]${RESET} Moodle 4.4  ${DIM}(MOODLE_404_STABLE)${RESET}"
-  echo -e "  ${GREEN}[3]${RESET} Moodle 4.3  ${DIM}(MOODLE_403_STABLE)${RESET}"
-  echo -e "  ${GREEN}[4]${RESET} Moodle 4.2  ${DIM}(MOODLE_402_STABLE)${RESET}"
-  echo -e "  ${GREEN}[5]${RESET} Moodle 4.1  ${DIM}(MOODLE_401_STABLE — LTS)${RESET}"
-  echo -e "  ${YELLOW}[6]${RESET} Moodle main ${DIM}(bleeding edge — NOT for production)${RESET}"
+  echo -e "  ${GREEN}[1]${RESET} Moodle 5.1  ${DIM}(MOODLE_501_STABLE — Latest)${RESET}"
+  echo -e "  ${GREEN}[2]${RESET} Moodle 4.5  ${DIM}(MOODLE_405_STABLE — LTS, recommended)${RESET}"
+  echo -e "  ${GREEN}[3]${RESET} Moodle 4.4  ${DIM}(MOODLE_404_STABLE)${RESET}"
+  echo -e "  ${GREEN}[4]${RESET} Moodle 4.3  ${DIM}(MOODLE_403_STABLE)${RESET}"
+  echo -e "  ${GREEN}[5]${RESET} Moodle 4.2  ${DIM}(MOODLE_402_STABLE)${RESET}"
+  echo -e "  ${GREEN}[6]${RESET} Moodle 4.1  ${DIM}(MOODLE_401_STABLE — LTS)${RESET}"
+  echo -e "  ${YELLOW}[7]${RESET} Moodle main ${DIM}(bleeding edge — NOT for production)${RESET}"
   echo ""
   while true; do
     local _ver_choice
-    read -rp "$(echo -e "  ${BOLD_CYAN}→  Version [1-6]: ${RESET}")" _ver_choice
+    read -rp "$(echo -e "  ${BOLD_CYAN}→  Version [1-7]: ${RESET}")" _ver_choice
     case "$_ver_choice" in
-      1) printf -v "$varname" '%s' "MOODLE_405_STABLE"; break ;;
-      2) printf -v "$varname" '%s' "MOODLE_404_STABLE"; break ;;
-      3) printf -v "$varname" '%s' "MOODLE_403_STABLE"; break ;;
-      4) printf -v "$varname" '%s' "MOODLE_402_STABLE"; break ;;
-      5) printf -v "$varname" '%s' "MOODLE_401_STABLE"; break ;;
-      6)
+      1) printf -v "$varname" '%s' "MOODLE_501_STABLE"; break ;;
+      2) printf -v "$varname" '%s' "MOODLE_405_STABLE"; break ;;
+      3) printf -v "$varname" '%s' "MOODLE_404_STABLE"; break ;;
+      4) printf -v "$varname" '%s' "MOODLE_403_STABLE"; break ;;
+      5) printf -v "$varname" '%s' "MOODLE_402_STABLE"; break ;;
+      6) printf -v "$varname" '%s' "MOODLE_401_STABLE"; break ;;
+      7)
         warn "The 'main' branch is unstable and not suitable for production."
         confirm "Are you sure you want to use main?" && { printf -v "$varname" '%s' "main"; break; }
         ;;
-      *) warn "Please enter a number between 1 and 6." ;;
+      *) warn "Please enter a number between 1 and 7." ;;
     esac
   done
   success "Selected: ${!varname}"
@@ -262,37 +287,99 @@ handle_moodle_dir() {
   fi
 
   if [[ -f "$dir/version.php" ]]; then
+    # Detect current version
+    local current_version
+    current_version=$(detect_installed_version "$dir")
+    
     local current_branch=""
     if [[ -d "$dir/.git" ]]; then
       current_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     fi
+    
+    # Map target branch to version number
+    local target_version
+    target_version=$(get_version_display_name "$branch")
+    
     warn "Existing Moodle installation detected in $dir"
+    info "Current version: Moodle $current_version"
     [[ -n "$current_branch" ]] && info "Current branch: $current_branch"
-    info "Target branch:  $branch"
+    info "Target version:  Moodle $target_version ($branch)"
     echo ""
-    echo -e "  ${BOLD}What would you like to do?${RESET}"
-    echo -e "  ${GREEN}[1]${RESET} Upgrade to $branch ${DIM}(keeps config.php, moodledata, database)${RESET}"
-    echo -e "  ${YELLOW}[2]${RESET} Reinstall ${DIM}(wipe Moodle files only — database untouched)${RESET}"
-    echo -e "  ${RED}[3]${RESET} Cancel"
-    echo ""
-    while true; do
-      local _dir_choice
-      read -rp "$(echo -e "  ${BOLD_CYAN}→  Choice [1/2/3]: ${RESET}")" _dir_choice
-      case "$_dir_choice" in
-        1) MOODLE_INSTALL_MODE="upgrade"; return 0 ;;
-        2)
-          warn "This will DELETE all Moodle files in $dir (database and moodledata are untouched)."
-          if confirm "Are you absolutely sure?"; then
-            rm -rf "$dir"
-            mkdir -p "$dir"
-            MOODLE_INSTALL_MODE="fresh"
+    
+    # Check if this is an upgrade
+    if [[ "$current_version" != "$target_version" && "$current_version" != "unknown" ]]; then
+      echo -e "  ${BOLD}What would you like to do?${RESET}"
+      echo -e "  ${GREEN}[1]${RESET} Upgrade to Moodle $target_version ${DIM}(preserves config.php, database, moodledata)${RESET}"
+      echo -e "  ${YELLOW}[2]${RESET} Reinstall ${DIM}(wipe Moodle files only — database untouched)${RESET}"
+      echo -e "  ${RED}[3]${RESET} Cancel"
+      echo ""
+      
+      while true; do
+        local _dir_choice
+        read -rp "$(echo -e "  ${BOLD_CYAN}→  Choice [1/2/3]: ${RESET}")" _dir_choice
+        case "$_dir_choice" in
+          1)
+            # Validate upgrade path
+            if ! validate_upgrade_path "$current_version" "$target_version"; then
+              pause
+              return 1
+            fi
+            
+            # Check dependencies
+            if ! check_upgrade_dependencies "$target_version"; then
+              warn ""
+              warn "System dependencies need to be upgraded first"
+              if confirm "Upgrade dependencies now?"; then
+                upgrade_dependencies "$current_version" "$target_version" || {
+                  error "Failed to upgrade dependencies"
+                  return 1
+                }
+              else
+                error "Cannot proceed without upgrading dependencies"
+                return 1
+              fi
+            fi
+            
+            MOODLE_INSTALL_MODE="upgrade"
             return 0
-          fi
-          ;;
-        3) main_menu; return 1 ;;
-        *) warn "Please enter 1, 2, or 3." ;;
-      esac
-    done
+            ;;
+          2)
+            warn "This will DELETE all Moodle files in $dir (database and moodledata are untouched)."
+            if confirm "Are you absolutely sure?"; then
+              rm -rf "$dir"
+              mkdir -p "$dir"
+              MOODLE_INSTALL_MODE="fresh"
+              return 0
+            fi
+            ;;
+          3) main_menu; return 1 ;;
+          *) warn "Please enter 1, 2, or 3." ;;
+        esac
+      done
+    else
+      # Same version or unknown - offer reinstall or cancel
+      echo -e "  ${BOLD}Moodle $current_version is already installed.${RESET}"
+      echo -e "  ${YELLOW}[1]${RESET} Reinstall ${DIM}(wipe and reinstall same version)${RESET}"
+      echo -e "  ${RED}[2]${RESET} Cancel"
+      echo ""
+      
+      while true; do
+        local _dir_choice
+        read -rp "$(echo -e "  ${BOLD_CYAN}→  Choice [1/2]: ${RESET}")" _dir_choice
+        case "$_dir_choice" in
+          1)
+            if confirm "Wipe $dir and reinstall Moodle $current_version?"; then
+              rm -rf "$dir"
+              mkdir -p "$dir"
+              MOODLE_INSTALL_MODE="fresh"
+              return 0
+            fi
+            ;;
+          2) main_menu; return 1 ;;
+          *) warn "Please enter 1 or 2." ;;
+        esac
+      done
+    fi
   else
     local file_count
     file_count=$(find "$dir" -maxdepth 1 -mindepth 1 | wc -l)

@@ -89,6 +89,26 @@ check_disk_space() {
   fi
 }
 
+check_moodle_disk_space() {
+  local moodle_dir="${1:-/var/www/html/moodle}"
+  local required_mb=1024
+  local available_mb
+  available_mb=$(df -m "$moodle_dir" 2>/dev/null | awk 'NR==2 {print $4}')
+  if [[ -z "$available_mb" ]]; then
+    # Directory doesn't exist yet, check parent
+    local parent_dir
+    parent_dir=$(dirname "$moodle_dir")
+    available_mb=$(df -m "$parent_dir" 2>/dev/null | awk 'NR==2 {print $4}')
+  fi
+  if (( available_mb < required_mb )); then
+    error "Insufficient disk space for Moodle installation. Need ${required_mb}MB, have ${available_mb}MB."
+    return 1
+  else
+    success "Disk space OK for Moodle: ${available_mb}MB available"
+    return 0
+  fi
+}
+
 check_ram() {
   local required_mb=512
   local available_mb

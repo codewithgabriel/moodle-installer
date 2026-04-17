@@ -2,6 +2,22 @@
 # scripts/case_c_cpanel.sh — cPanel / shared hosting interactive guide
 
 run_cpanel_guide() {
+  # Check if running on Windows
+  if [[ "$PLATFORM" == "windows" ]]; then
+    error "cPanel is not supported on Windows"
+    error ""
+    error "cPanel is a Linux-only control panel used by web hosting providers."
+    error ""
+    error "For Windows hosting, consider:"
+    error "  - Plesk (Windows-compatible control panel)"
+    error "  - Fresh installation (Option A from main menu)"
+    error "  - Existing server installation (Option B from main menu)"
+    error ""
+    pause
+    main_menu
+    return
+  fi
+  
   write_section "Case C — cPanel / Shared Hosting"
   info "cPanel doesn't allow root access — this guide walks you through the web panel."
   echo ""

@@ -85,14 +85,32 @@ run_fresh_install() {
   # ── Step 3: Install dependencies ──────────────────────────
   write_section "Step 3 — Installing Dependencies"
 
-  run_cmd "Installing Apache2"   apt_install apache2                                    || { error "Failed to install Apache2. See error above."; exit 1; }
-  run_cmd "Installing MariaDB"   apt_install mariadb-server mariadb-client              || { error "Failed to install MariaDB. See error above."; exit 1; }
-  run_cmd "Installing Redis"     apt_install redis-server                               || { error "Failed to install Redis. See error above."; exit 1; }
-  run_cmd "Installing PHP 8.3 + extensions" apt_install \
-    php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml \
-    php8.3-mbstring php8.3-curl php8.3-zip php8.3-gd php8.3-intl \
-    php8.3-soap php8.3-redis php8.3-opcache libapache2-mod-php8.3                                   || { error "Failed to install PHP 8.3 packages. See error above."; exit 1; }
-  run_cmd "Installing utilities" apt_install git curl wget unzip cron                   || { error "Failed to install utilities. See error above."; exit 1; }
+  run_cmd "Installing Apache2" platform_install_package apache2 || { error "Failed to install Apache2. See error above."; exit 1; }
+  run_cmd "Installing MariaDB server" platform_install_package mariadb-server || { error "Failed to install MariaDB server. See error above."; exit 1; }
+  run_cmd "Installing MariaDB client" platform_install_package mariadb-client || { error "Failed to install MariaDB client. See error above."; exit 1; }
+  run_cmd "Installing Redis" platform_install_package redis-server || { error "Failed to install Redis. See error above."; exit 1; }
+  
+  # Install PHP packages one by one for better error reporting
+  run_cmd "Installing PHP 8.3 core" platform_install_package php8.3 || { error "Failed to install PHP 8.3. See error above."; exit 1; }
+  run_cmd "Installing PHP 8.3 CLI" platform_install_package php8.3-cli || { error "Failed to install PHP CLI. See error above."; exit 1; }
+  run_cmd "Installing PHP 8.3 FPM" platform_install_package php8.3-fpm || { error "Failed to install PHP FPM. See error above."; exit 1; }
+  run_cmd "Installing PHP MySQL extension" platform_install_package php8.3-mysql || { error "Failed to install PHP MySQL. See error above."; exit 1; }
+  run_cmd "Installing PHP XML extension" platform_install_package php8.3-xml || { error "Failed to install PHP XML. See error above."; exit 1; }
+  run_cmd "Installing PHP mbstring extension" platform_install_package php8.3-mbstring || { error "Failed to install PHP mbstring. See error above."; exit 1; }
+  run_cmd "Installing PHP curl extension" platform_install_package php8.3-curl || { error "Failed to install PHP curl. See error above."; exit 1; }
+  run_cmd "Installing PHP zip extension" platform_install_package php8.3-zip || { error "Failed to install PHP zip. See error above."; exit 1; }
+  run_cmd "Installing PHP GD extension" platform_install_package php8.3-gd || { error "Failed to install PHP GD. See error above."; exit 1; }
+  run_cmd "Installing PHP intl extension" platform_install_package php8.3-intl || { error "Failed to install PHP intl. See error above."; exit 1; }
+  run_cmd "Installing PHP soap extension" platform_install_package php8.3-soap || { error "Failed to install PHP soap. See error above."; exit 1; }
+  run_cmd "Installing PHP redis extension" platform_install_package php8.3-redis || { error "Failed to install PHP redis. See error above."; exit 1; }
+  run_cmd "Installing PHP opcache extension" platform_install_package php8.3-opcache || { error "Failed to install PHP opcache. See error above."; exit 1; }
+  run_cmd "Installing Apache PHP module" platform_install_package libapache2-mod-php8.3 || { error "Failed to install Apache PHP module. See error above."; exit 1; }
+  
+  run_cmd "Installing git" platform_install_package git || { error "Failed to install git. See error above."; exit 1; }
+  run_cmd "Installing curl" platform_install_package curl || { error "Failed to install curl. See error above."; exit 1; }
+  run_cmd "Installing wget" platform_install_package wget || { error "Failed to install wget. See error above."; exit 1; }
+  run_cmd "Installing unzip" platform_install_package unzip || { error "Failed to install unzip. See error above."; exit 1; }
+  run_cmd "Installing cron" platform_install_package cron || { error "Failed to install cron. See error above."; exit 1; }
 
   # Set PHP_BIN for this session
   PHP_BIN="php8.3"
@@ -128,8 +146,8 @@ run_fresh_install() {
   # ── Step 5: MariaDB setup ─────────────────────────────────
   write_section "Step 5 — Database Setup"
 
-  svc_start  mariadb
-  svc_enable mariadb
+  platform_start_service mariadb
+  platform_enable_service mariadb
 
   mysql_root <<MYSQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -142,8 +160,8 @@ MYSQL
 
   # ── Step 6: Redis ─────────────────────────────────────────
   write_section "Step 6 — Redis Setup"
-  svc_enable redis-server
-  svc_start  redis-server
+  platform_enable_service redis-server
+  platform_start_service redis-server
   success "Redis running"
 
   # ── Step 7: Download Moodle ───────────────────────────────
@@ -154,9 +172,10 @@ MYSQL
 
   # ── Step 8: Permissions ───────────────────────────────────
   write_section "Step 8 — Setting Permissions"
-  chown -R www-data:www-data "$MOODLE_DIR" "$MOODLE_DATA"
-  chmod -R 755 "$MOODLE_DIR"
-  chmod -R 770 "$MOODLE_DATA"
+  local web_user
+  web_user=$(platform_get_web_user)
+  platform_set_permissions "$MOODLE_DIR" "$web_user:$web_user" "755"
+  platform_set_permissions "$MOODLE_DATA" "$web_user:$web_user" "770"
   # Make all parent directories traversable by www-data
   local _parent="$MOODLE_DIR"
   while [[ "$_parent" != "/" ]]; do
@@ -189,7 +208,7 @@ VHOST
   # Only disable default if it's currently enabled
   a2dissite 000-default.conf &>/dev/null || true
   a2enmod rewrite &>/dev/null
-  svc_restart apache2
+  platform_restart_service apache2
   success "Apache configured for $SITE_DOMAIN"
 
   # ── Step 10: SSL ──────────────────────────────────────────
@@ -229,7 +248,7 @@ VHOST
 </VirtualHost>
 SSLVHOST
       a2enmod ssl &>/dev/null
-      svc_restart apache2
+      platform_restart_service apache2
       WWWROOT="https://${SITE_DOMAIN}"
       success "Self-signed certificate configured"
       ;;
@@ -279,8 +298,9 @@ global \$CFG;
 
 require_once(__DIR__ . '/lib/setup.php');
 CONFIG
-    chown www-data:www-data "$MOODLE_DIR/config.php"
-    chmod 640 "$MOODLE_DIR/config.php"
+    local web_user
+    web_user=$(platform_get_web_user)
+    platform_set_permissions "$MOODLE_DIR/config.php" "$web_user:$web_user" "640"
     success "config.php written"
   else
     info "Upgrade mode — existing config.php preserved"
@@ -300,15 +320,14 @@ CONFIG
       fi
     fi
   done
-  local PHP_RUNNER="sudo -u www-data"
+  
+  local web_user
+  web_user=$(platform_get_web_user)
+  local PHP_RUNNER="sudo -u $web_user"
 
   if [[ "$MOODLE_INSTALL_MODE" == "upgrade" ]]; then
     write_section "Step 12 — Running Moodle Upgrade"
-    $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/upgrade.php" --non-interactive &
-    local upgrade_pid=$!
-    spinner $upgrade_pid "Upgrading Moodle database..."
-    wait $upgrade_pid || { error "Moodle upgrade failed. Check $LOG_FILE for details."; exit 1; }
-    $PHP_RUNNER "$PHP_BIN" "$MOODLE_DIR/admin/cli/purge_caches.php" &>/dev/null
+    execute_moodle_upgrade "$MOODLE_DIR" "$(get_version_display_name "$MOODLE_BRANCH")" || { error "Moodle upgrade failed. Check $LOG_FILE for details."; exit 1; }
     success "Moodle upgraded to $MOODLE_BRANCH"
   else
     write_section "Step 12 — Running Moodle CLI Install"
