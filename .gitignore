@@ -2,3 +2,5 @@
 
 # Brace-expansion artifact (should not exist)
 {scripts,templates,lib}
+
+.checkpoint
